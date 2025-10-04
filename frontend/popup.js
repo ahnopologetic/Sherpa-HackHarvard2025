@@ -4,13 +4,13 @@
 const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
-const analyzeBtn       = document.getElementById('analyzeBtn');
-const buttonText       = document.getElementById('buttonText');
-const statusContainer  = document.getElementById('statusContainer');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const buttonText = document.getElementById('buttonText');
+const statusContainer = document.getElementById('statusContainer');
 const loadingIndicator = document.getElementById('loadingIndicator');
 const successIndicator = document.getElementById('successIndicator');
-const errorIndicator   = document.getElementById('errorIndicator');
-const errorMessage     = document.getElementById('errorMessage');
+const errorIndicator = document.getElementById('errorIndicator');
+const errorMessage = document.getElementById('errorMessage');
 
 const settingsBtn      = document.getElementById('settingsBtn');
 const settingsPanel    = document.getElementById('settingsPanel');
@@ -60,7 +60,7 @@ function ensureSummaryUI() {
   meta.style.gap = '8px';
 
   summarySource = document.createElement('span');
-  summaryModel  = document.createElement('span');
+  summaryModel = document.createElement('span');
   meta.appendChild(summarySource);
   meta.appendChild(summaryModel);
   header.appendChild(meta);
@@ -315,7 +315,7 @@ function populateNavigationSuggestions() {
 async function createBackendSession(pageData) {
   try {
     voiceDisplay.textContent = '🔄 Creating navigation session...';
-    
+
     const payload = {
       url: pageData.url,
       locale: pageData.language || 'en-US',
@@ -324,7 +324,7 @@ async function createBackendSession(pageData) {
         sections: pageData.sections,
         aliases: {} // Can be enhanced later
       }
-      
+
     };
     console.log('📤 SENDING TO BACKEND:', JSON.stringify(payload, null, 2));
 
@@ -351,7 +351,7 @@ async function createBackendSession(pageData) {
     
     console.log('Session created:', currentSessionId);
     return result;
-    
+
   } catch (error) {
     console.error('Session creation error:', error);
     voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
@@ -384,7 +384,7 @@ async function interpretCommand(command) {
     const result = await response.json();
     console.log('Interpretation result:', result);
     return result;
-    
+
   } catch (error) {
     console.error('Interpretation error:', error);
     throw error;
@@ -422,20 +422,20 @@ async function handleCommand() {
 
   submitBtn.disabled = true;
   voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
-  
+
   try {
     // Step 1: Interpret the command
     const interpretation = await interpretCommand(command);
     console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
     // Step 2: Show the TTS text from backend
     voiceDisplay.textContent = `💬 ${interpretation.tts_text}\n\n`;
-    
+
     // Step 3: Navigate if intent is NAVIGATE
     if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
       voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
-      
+
       await navigateToSection(interpretation.target_section_id);
-      
+
       voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else if (interpretation.intent === 'LIST_SECTIONS') {
       voiceDisplay.textContent += '\n📋 Available sections:\n';
@@ -447,7 +447,7 @@ async function handleCommand() {
     } else {
       voiceDisplay.textContent += `\nIntent: ${interpretation.intent}`;
     }
-    
+
     // Show alternatives if available
     if (interpretation.alternatives && interpretation.alternatives.length > 0) {
       voiceDisplay.textContent += '\n\n📌 Alternatives:';
@@ -455,10 +455,10 @@ async function handleCommand() {
         voiceDisplay.textContent += `\n  • ${alt.label} (${(alt.confidence * 100).toFixed(1)}%)`;
       });
     }
-    
+
     // Clear input
     textInput.value = '';
-    
+
   } catch (error) {
     voiceDisplay.textContent = `❌ Error: ${error.message}`;
   } finally {
@@ -470,7 +470,7 @@ async function handleCommand() {
 function hideAllIndicators() {
   loadingIndicator && loadingIndicator.classList.add('hidden');
   successIndicator && successIndicator.classList.add('hidden');
-  errorIndicator   && errorIndicator.classList.add('hidden');
+  errorIndicator && errorIndicator.classList.add('hidden');
 }
 
 function showLoading() {
@@ -565,25 +565,25 @@ chrome.runtime.onMessage.addListener((message) => {
     ensureSummaryUI();
     summaryText.value = message.summary || '';
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
-    summaryModel.textContent  = message.model  ? `model: ${message.model}`   : '';
+    summaryModel.textContent = message.model ? `model: ${message.model}` : '';
     summarySection.style.display = 'block';
-    
+
     // Show voice command UI and create backend session
     ensureVoiceUI();
     voiceSection.style.display = 'block';
-    
+
     // Store page structure for later use
     if (message.pageStructure) {
       pageStructureData = message.pageStructure;
     }
-    
+
     return;
   }
 
   // Handle page structure data for backend session
   if (message.type === 'page_structure_for_session') {
     pageStructureData = message.data;
-    
+
     // Create backend session with the page structure
     createBackendSession(message.data).catch(error => {
       console.error('Failed to create backend session:', error);
