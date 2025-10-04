@@ -2,6 +2,8 @@
 Sherpa API - FastAPI application for voice-controlled web navigation
 """
 
+import logging
+
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -23,6 +25,7 @@ from services import SessionService, InterpretService
 from config import settings
 
 # Initialize FastAPI app
+logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.API_TITLE,
     description=settings.API_DESCRIPTION,
@@ -71,7 +74,9 @@ async def create_session(request: CreateSessionRequest) -> CreateSessionResponse
 async def interpret_command(
     session_id: str = Path(..., description="Session identifier"),
     mode: str = Query("text", description="Mode: 'voice' or 'text'"),
-    audio: Optional[UploadFile] = File(None, description="Audio file (wav/mp3/ogg), 16k–48kHz"),
+    audio: Optional[UploadFile] = File(
+        None, description="Audio file (wav/mp3/ogg), 16k–48kHz"
+    ),
     text: Optional[str] = Form(None, description="Text command (for text mode)"),
     hint: Optional[str] = Form(None, description="Optional hint: 'navigate|read|list'"),
 ) -> InterpretResponse:

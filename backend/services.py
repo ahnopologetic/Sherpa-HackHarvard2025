@@ -2,6 +2,8 @@
 Business logic for Sherpa API
 """
 
+import logging
+
 import uuid
 from google import genai
 from google.genai import types
@@ -14,6 +16,9 @@ from config import settings
 
 
 # In-memory session storage (replace with Redis/database in production)
+logger = logging.getLogger('uvicorn.error')
+logger.setLevel(logging.DEBUG) # Set your desired logging level
+
 sessions: Dict[str, Dict] = {}
 MOCK_SECTION_MAP = {
     "title": "Why bees matter",
@@ -127,6 +132,7 @@ class InterpretService:
         )
 
         section_map = session.get("section_map") or MOCK_SECTION_MAP
+        logger.info(f"{section_map=}")
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
@@ -149,6 +155,7 @@ class InterpretService:
                 response_schema=InterpretResponse,
             ),
         )
+        logger.info(f"{response.parsed=}")
 
         # Mock processing times
         # TODO: Implement actual ASR and NLU processing
