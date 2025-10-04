@@ -125,6 +125,27 @@ async function getApiKey() {
   return sync?.geminiApiKey || null;
 }
 
+// ===== Request page structure for backend =====
+async function requestPageForBackend(tabId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { command: 'get_page_for_backend' },
+      (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (!resp || !resp.ok) {
+          reject(new Error(resp?.error || 'Failed to get page data'));
+          return;
+        }
+        resolve(resp.data);
+      }
+    );
+  });
+}
+
 // ===== Core workflow =====
 async function handlePageAnalysis(pageStructure) {
   notifyPopup('loading', 'Preparing summary…');
@@ -160,7 +181,8 @@ async function handlePageAnalysis(pageStructure) {
       type: 'analysis_complete',
       summary,
       source: usedSource || (apiKey ? 'cloud' : 'built-in'),
-      model: GEMINI_MODEL
+      model: GEMINI_MODEL,
+      pageStructure: pageStructure // Send page structure too
     }).catch(() => {});
 
     // Then speak, updating status along the way
@@ -169,6 +191,17 @@ async function handlePageAnalysis(pageStructure) {
     await speakText(summary, langHint);
 
     notifyPopup('complete');
+    
+    // Get current tab and request page structure for backend
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs && tabs[0]) {
+      try {
+        await requestPageForBackend(tabs[0].id);
+      } catch (err) {
+        console.warn('[Atlas] Could not get page for backend:', err);
+      }
+    }
+    
   } catch (error) {
     console.error('[Atlas] Analysis workflow error:', error);
 

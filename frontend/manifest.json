@@ -13,7 +13,8 @@
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
-    "https://dev.your-api-server.com/*"
+    "http://sherpa-hackharvard2025-production.up.railway.app/*",
+    "https://sherpa-hackharvard2025-production.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -208,3 +208,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   
   // Log successful injection
   console.log('Project Sherpa content script loaded');
+// Add message listener to also send page structure for backend session
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.command === 'get_page_for_backend') {
+    try {
+      const pageData = parsePageForMapping();
+      // Also send to popup for backend session creation
+      chrome.runtime.sendMessage({
+        type: 'page_structure_for_session',
+        data: pageData
+      });
+      sendResponse({ ok: true, data: pageData });
+      return true;
+    } catch (error) {
+      console.error('[Atlas] Error getting page for backend:', error);
+      sendResponse({ ok: false, error: error.message });
+    }
+  }
+});

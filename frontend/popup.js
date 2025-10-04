@@ -1,5 +1,8 @@
 // popup.js — Project Atlas
 
+// ---- Config ----
+const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+
 // ---- Elements (existing IDs in your HTML) ----
 const analyzeBtn       = document.getElementById('analyzeBtn');
 const buttonText       = document.getElementById('buttonText');
@@ -18,12 +21,11 @@ const apiKeyStatus     = document.getElementById('apiKeyStatus');
 // ---- State ----
 let isAnalyzing = false;
 let analyzeTimeoutId = null;
+let currentSessionId = null;
+let pageStructureData = null;
 
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
-
-// ---- Voice Recording UI ----
-let voiceSection, voiceBtn, voiceBtnText, voiceDisplay, isRecording = false, mediaStream = null, recorder = null, chunks = [];
 
 function ensureSummaryUI() {
   if (summarySection) return;
@@ -113,6 +115,9 @@ function ensureSummaryUI() {
   main.appendChild(summarySection);
 }
 
+// ---- Voice Command UI (Text Input Version) ----
+let voiceSection, textInput, submitBtn, voiceDisplay;
+
 function ensureVoiceUI() {
   if (voiceSection) return;
 
@@ -130,26 +135,35 @@ function ensureVoiceUI() {
   header.style.marginBottom = '8px';
 
   const title = document.createElement('h2');
-  title.textContent = 'Voice Command';
+  title.textContent = 'Navigation Command';
   title.style.fontSize = '16px';
   title.style.fontWeight = '700';
   header.appendChild(title);
 
-  voiceBtn = document.createElement('button');
-  voiceBtn.id = 'voiceBtn';
-  voiceBtn.style.width = '100%';
-  voiceBtn.style.padding = '10px 12px';
-  voiceBtn.style.border = '0';
-  voiceBtn.style.borderRadius = '10px';
-  voiceBtn.style.background = '#38bdf8';
-  voiceBtn.style.color = '#052e16';
-  voiceBtn.style.fontWeight = '700';
-  voiceBtn.style.cursor = 'pointer';
-  voiceBtn.style.marginBottom = '10px';
+  // Text input for commands
+  textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.placeholder = 'Type your command here (e.g., "go to navigation", "scroll to footer")';
+  textInput.style.width = '100%';
+  textInput.style.padding = '8px';
+  textInput.style.border = '1px solid #ccc';
+  textInput.style.borderRadius = '4px';
+  textInput.style.marginBottom = '8px';
+  textInput.style.fontSize = '14px';
+  textInput.style.boxSizing = 'border-box';
 
-  voiceBtnText = document.createElement('span');
-  voiceBtnText.textContent = '🎙️ Start Recording';
-  voiceBtn.appendChild(voiceBtnText);
+  // Submit button
+  submitBtn = document.createElement('button');
+  submitBtn.textContent = 'Submit Command';
+  submitBtn.style.width = '100%';
+  submitBtn.style.padding = '10px';
+  submitBtn.style.background = '#10b981';
+  submitBtn.style.color = 'white';
+  submitBtn.style.border = 'none';
+  submitBtn.style.borderRadius = '4px';
+  submitBtn.style.cursor = 'pointer';
+  submitBtn.style.fontWeight = '600';
+  submitBtn.style.marginBottom = '10px';
 
   voiceDisplay = document.createElement('div');
   voiceDisplay.id = 'voiceDisplay';
@@ -160,85 +174,173 @@ function ensureVoiceUI() {
   voiceDisplay.style.color = '#1f2937';
   voiceDisplay.style.fontSize = '14px';
   voiceDisplay.style.lineHeight = '1.4';
-  voiceDisplay.textContent = 'Click the button above to start recording your voice command...';
+  voiceDisplay.style.marginTop = '10px';
+  voiceDisplay.textContent = 'Type your navigation command above and click Submit...';
+
+  // Event listeners
+  submitBtn.addEventListener('click', handleCommand);
+  textInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      handleCommand();
+    }
+  });
 
   voiceSection.appendChild(header);
-  voiceSection.appendChild(voiceBtn);
+  voiceSection.appendChild(textInput);
+  voiceSection.appendChild(submitBtn);
   voiceSection.appendChild(voiceDisplay);
 
   main.appendChild(voiceSection);
-
-  voiceBtn.addEventListener('click', toggleRecording);
 }
 
-async function toggleRecording() {
-  if (isRecording) {
-    await stopRecording();
-  } else {
-    await startRecording();
-  }
-}
+// ---- Backend Integration Functions ----
 
-async function startRecording() {
+async function createBackendSession(pageData) {
   try {
-    voiceBtn.disabled = true;
-    voiceBtnText.textContent = '🎙️ Starting...';
-    voiceDisplay.textContent = 'Requesting microphone access...';
-
-    // Simple approach - just request media directly
-    mediaStream = await navigator.mediaDevices.getUserMedia({ 
-      audio: true 
-    });
+    voiceDisplay.textContent = '🔄 Creating navigation session...';
     
-    chunks = [];
-    
-    recorder = new MediaRecorder(mediaStream);
-    recorder.ondataavailable = (e) => {
-      if (e.data?.size) chunks.push(e.data);
-    };
-    
-    recorder.onstop = async () => {
-      try {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        voiceDisplay.textContent = `✅ Audio captured! (${Math.round(blob.size / 1024)}KB)`;
-        console.log('Audio captured:', blob.size, 'bytes');
-      } catch (error) {
-        voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    const payload = {
+      url: pageData.url,
+      locale: pageData.language || 'en-US',
+      section_map: {
+        title: pageData.title,
+        sections: pageData.sections,
+        aliases: {} // Can be enhanced later
       }
     };
 
-    recorder.start();
-    isRecording = true;
-    voiceBtnText.textContent = '🛑 Stop Recording';
-    voiceDisplay.textContent = '🎙️ Recording... Speak now!';
-    voiceBtn.disabled = false;
+    const response = await fetch(`${BACKEND_BASE}/v1/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Session creation failed: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+    currentSessionId = result.session_id;
+    
+    voiceDisplay.textContent = `✅ Session created! You can now use navigation commands.\n\nTry: "go to navigation", "scroll to footer", etc.`;
+    
+    console.log('Session created:', currentSessionId);
+    return result;
+    
   } catch (error) {
-    voiceBtn.disabled = false;
-    voiceBtnText.textContent = '🎙️ Start Recording';
-    voiceDisplay.textContent = `❌ Permission denied. Please allow microphone access in Chrome settings.`;
-    console.error('Recording error:', error);
+    console.error('Session creation error:', error);
+    voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
+    throw error;
   }
 }
 
-async function stopRecording() {
-  if (!recorder || !isRecording) return;
-  
-  voiceBtn.disabled = true;
-  voiceBtnText.textContent = '🔄 Processing...';
-  voiceDisplay.textContent = 'Processing your audio...';
-  
-  recorder.stop();
-  isRecording = false;
-  
-  // Clean up media stream
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
+async function interpretCommand(command) {
+  if (!currentSessionId) {
+    throw new Error('No active session. Please analyze the page first.');
   }
+
+  try {
+    const formData = new FormData();
+    formData.append('text', command);
+
+    const response = await fetch(
+      `${BACKEND_BASE}/v1/sessions/${currentSessionId}/interpret?mode=text`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Interpretation failed: ${response.status} ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('Interpretation result:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('Interpretation error:', error);
+    throw error;
+  }
+}
+
+async function navigateToSection(sectionId) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) throw new Error('No active tab');
+
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      command: 'navigate_to_section',
+      sectionId: sectionId
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error || 'Navigation failed');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Navigation error:', error);
+    throw error;
+  }
+}
+
+async function handleCommand() {
+  const command = textInput.value.trim();
+  if (!command) {
+    voiceDisplay.textContent = '❌ Please enter a command first.';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
   
-  voiceBtnText.textContent = '🎙️ Start Recording';
-  voiceBtn.disabled = false;
+  try {
+    // Step 1: Interpret the command
+    const interpretation = await interpretCommand(command);
+    
+    // Step 2: Show the TTS text from backend
+    voiceDisplay.textContent = `💬 ${interpretation.tts_text}\n\n`;
+    
+    // Step 3: Navigate if intent is NAVIGATE
+    if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
+      voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
+      
+      await navigateToSection(interpretation.target_section_id);
+      
+      voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
+    } else if (interpretation.intent === 'LIST_SECTIONS') {
+      voiceDisplay.textContent += '\n📋 Available sections:\n';
+      if (pageStructureData && pageStructureData.sections) {
+        pageStructureData.sections.forEach(section => {
+          voiceDisplay.textContent += `  • ${section.label} (${section.role})\n`;
+        });
+      }
+    } else {
+      voiceDisplay.textContent += `\nIntent: ${interpretation.intent}`;
+    }
+    
+    // Show alternatives if available
+    if (interpretation.alternatives && interpretation.alternatives.length > 0) {
+      voiceDisplay.textContent += '\n\n📌 Alternatives:';
+      interpretation.alternatives.forEach(alt => {
+        voiceDisplay.textContent += `\n  • ${alt.label} (${(alt.confidence * 100).toFixed(1)}%)`;
+      });
+    }
+    
+    // Clear input
+    textInput.value = '';
+    
+  } catch (error) {
+    voiceDisplay.textContent = `❌ Error: ${error.message}`;
+  } finally {
+    submitBtn.disabled = false;
+  }
 }
 
 // ---- UI helpers ----
@@ -256,7 +358,6 @@ function showLoading() {
 }
 
 function showSpeaking() {
-  // Optional: visually indicate speaking state
   buttonText && (buttonText.textContent = 'Speaking…');
 }
 
@@ -291,7 +392,6 @@ async function startAnalysis() {
     isAnalyzing = true;
     showLoading();
 
-    // Robust timeout (45s). Will be cleared by analysis_complete / atlas_status.
     clearAnalyzeTimeout();
     analyzeTimeoutId = setTimeout(() => {
       if (isAnalyzing) {
@@ -310,14 +410,13 @@ async function startAnalysis() {
 
 // ---- Listen for background updates ----
 chrome.runtime.onMessage.addListener((message) => {
-  // Status pings from background
   if (message.type === 'atlas_status') {
     switch (message.status) {
       case 'loading':
         showLoading();
         break;
       case 'speaking':
-        isAnalyzing = false;      // generation is done
+        isAnalyzing = false;
         clearAnalyzeTimeout();
         showSpeaking();
         break;
@@ -335,22 +434,37 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
 
-  // Final payload with the LLM summary (now sent BEFORE TTS)
   if (message.type === 'analysis_complete') {
     isAnalyzing = false;
     clearAnalyzeTimeout();
     showSuccess();
-  
+
     ensureSummaryUI();
     summaryText.value = message.summary || '';
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
     summaryModel.textContent  = message.model  ? `model: ${message.model}`   : '';
     summarySection.style.display = 'block';
     
-    // Show voice recording UI after summary is ready
+    // Show voice command UI and create backend session
     ensureVoiceUI();
     voiceSection.style.display = 'block';
+    
+    // Store page structure for later use
+    if (message.pageStructure) {
+      pageStructureData = message.pageStructure;
+    }
+    
     return;
+  }
+
+  // Handle page structure data for backend session
+  if (message.type === 'page_structure_for_session') {
+    pageStructureData = message.data;
+    
+    // Create backend session with the page structure
+    createBackendSession(message.data).catch(error => {
+      console.error('Failed to create backend session:', error);
+    });
   }
 
   if (message.type === 'analysis_error') {
@@ -370,7 +484,6 @@ saveApiKeyBtn?.addEventListener('click', async () => {
   }
 
   try {
-    // Save to either storage.local or sync; background reads local-first then sync
     await chrome.storage.local.set({ geminiApiKey: apiKey });
     apiKeyStatus.textContent = '✓ API key saved';
     apiKeyStatus.className = 'api-key-status success';
@@ -395,3 +508,4 @@ settingsBtn?.addEventListener('click', () => {
 (function init() {
   hideAllIndicators();
 })();
+
