@@ -185,10 +185,14 @@ async function startRecording() {
     voiceBtnText.textContent = '🎙️ Starting...';
     voiceDisplay.textContent = 'Requesting microphone access...';
 
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Simple approach - just request media directly
+    mediaStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: true 
+    });
+    
     chunks = [];
     
-    recorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+    recorder = new MediaRecorder(mediaStream);
     recorder.ondataavailable = (e) => {
       if (e.data?.size) chunks.push(e.data);
     };
@@ -196,29 +200,23 @@ async function startRecording() {
     recorder.onstop = async () => {
       try {
         const blob = new Blob(chunks, { type: 'audio/webm' });
-        const arrayBuffer = await blob.arrayBuffer();
-        
-        // For now, just display that we captured audio
-        voiceDisplay.textContent = `✅ Audio captured! (${Math.round(blob.size / 1024)}KB)\n\nThis is where we'll process your voice command in the next step.`;
-        
-        // TODO: Send to background script for processing
+        voiceDisplay.textContent = `✅ Audio captured! (${Math.round(blob.size / 1024)}KB)`;
         console.log('Audio captured:', blob.size, 'bytes');
-        
       } catch (error) {
-        voiceDisplay.textContent = `❌ Error processing audio: ${error.message}`;
+        voiceDisplay.textContent = `❌ Error: ${error.message}`;
       }
     };
 
     recorder.start();
     isRecording = true;
     voiceBtnText.textContent = '🛑 Stop Recording';
-    voiceDisplay.textContent = '🎙️ Recording... Speak your command now!';
+    voiceDisplay.textContent = '🎙️ Recording... Speak now!';
     voiceBtn.disabled = false;
 
   } catch (error) {
     voiceBtn.disabled = false;
     voiceBtnText.textContent = '🎙️ Start Recording';
-    voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    voiceDisplay.textContent = `❌ Permission denied. Please allow microphone access in Chrome settings.`;
     console.error('Recording error:', error);
   }
 }

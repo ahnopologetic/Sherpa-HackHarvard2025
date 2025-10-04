@@ -201,10 +201,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return true;
     }
   } catch (e) {
-    console.error('[Atlas] content error:', e);
+    console.error('[Sherpa] content error:', e);
     sendResponse({ ok: false, error: e.message });
   }
 });
   
   // Log successful injection
-  console.log('Project Atlas content script loaded');
+  console.log('Project Sherpa content script loaded');
