@@ -2,7 +2,7 @@
 // Project Atlas — Central orchestrator for AI + TTS
 
 // ===== Config =====
-const GEMINI_MODEL = 'gemini-1.5-flash'; // fast & low-cost; try 'gemini-1.5-pro' for higher quality
+const GEMINI_MODEL = 'gemini-2.5-flash'; // fast & low-cost; try 'gemini-2.5-pro' for higher quality
 const GEMINI_API_ENDPOINT =
   `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const REQUEST_TIMEOUT_MS = 15000; // 15s hard timeout

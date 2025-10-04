@@ -22,6 +22,9 @@ let analyzeTimeoutId = null;
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
 
+// ---- Voice Recording UI ----
+let voiceSection, voiceBtn, voiceBtnText, voiceDisplay, isRecording = false, mediaStream = null, recorder = null, chunks = [];
+
 function ensureSummaryUI() {
   if (summarySection) return;
 
@@ -108,6 +111,136 @@ function ensureSummaryUI() {
   summarySection.appendChild(actions);
 
   main.appendChild(summarySection);
+}
+
+function ensureVoiceUI() {
+  if (voiceSection) return;
+
+  const main = document.querySelector('main') || document.body;
+
+  voiceSection = document.createElement('section');
+  voiceSection.id = 'voiceSection';
+  voiceSection.style.marginTop = '12px';
+  voiceSection.style.background = 'rgba(255, 255, 255, 0.18)';
+  voiceSection.style.borderRadius = '8px';
+  voiceSection.style.padding = '12px';
+  voiceSection.style.display = 'none';
+
+  const header = document.createElement('div');
+  header.style.marginBottom = '8px';
+
+  const title = document.createElement('h2');
+  title.textContent = 'Voice Command';
+  title.style.fontSize = '16px';
+  title.style.fontWeight = '700';
+  header.appendChild(title);
+
+  voiceBtn = document.createElement('button');
+  voiceBtn.id = 'voiceBtn';
+  voiceBtn.style.width = '100%';
+  voiceBtn.style.padding = '10px 12px';
+  voiceBtn.style.border = '0';
+  voiceBtn.style.borderRadius = '10px';
+  voiceBtn.style.background = '#38bdf8';
+  voiceBtn.style.color = '#052e16';
+  voiceBtn.style.fontWeight = '700';
+  voiceBtn.style.cursor = 'pointer';
+  voiceBtn.style.marginBottom = '10px';
+
+  voiceBtnText = document.createElement('span');
+  voiceBtnText.textContent = '🎙️ Start Recording';
+  voiceBtn.appendChild(voiceBtnText);
+
+  voiceDisplay = document.createElement('div');
+  voiceDisplay.id = 'voiceDisplay';
+  voiceDisplay.style.minHeight = '60px';
+  voiceDisplay.style.padding = '10px';
+  voiceDisplay.style.background = 'rgba(255,255,255,0.9)';
+  voiceDisplay.style.borderRadius = '6px';
+  voiceDisplay.style.color = '#1f2937';
+  voiceDisplay.style.fontSize = '14px';
+  voiceDisplay.style.lineHeight = '1.4';
+  voiceDisplay.textContent = 'Click the button above to start recording your voice command...';
+
+  voiceSection.appendChild(header);
+  voiceSection.appendChild(voiceBtn);
+  voiceSection.appendChild(voiceDisplay);
+
+  main.appendChild(voiceSection);
+
+  voiceBtn.addEventListener('click', toggleRecording);
+}
+
+async function toggleRecording() {
+  if (isRecording) {
+    await stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    voiceBtn.disabled = true;
+    voiceBtnText.textContent = '🎙️ Starting...';
+    voiceDisplay.textContent = 'Requesting microphone access...';
+
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    chunks = [];
+    
+    recorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+    recorder.ondataavailable = (e) => {
+      if (e.data?.size) chunks.push(e.data);
+    };
+    
+    recorder.onstop = async () => {
+      try {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const arrayBuffer = await blob.arrayBuffer();
+        
+        // For now, just display that we captured audio
+        voiceDisplay.textContent = `✅ Audio captured! (${Math.round(blob.size / 1024)}KB)\n\nThis is where we'll process your voice command in the next step.`;
+        
+        // TODO: Send to background script for processing
+        console.log('Audio captured:', blob.size, 'bytes');
+        
+      } catch (error) {
+        voiceDisplay.textContent = `❌ Error processing audio: ${error.message}`;
+      }
+    };
+
+    recorder.start();
+    isRecording = true;
+    voiceBtnText.textContent = '🛑 Stop Recording';
+    voiceDisplay.textContent = '🎙️ Recording... Speak your command now!';
+    voiceBtn.disabled = false;
+
+  } catch (error) {
+    voiceBtn.disabled = false;
+    voiceBtnText.textContent = '🎙️ Start Recording';
+    voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    console.error('Recording error:', error);
+  }
+}
+
+async function stopRecording() {
+  if (!recorder || !isRecording) return;
+  
+  voiceBtn.disabled = true;
+  voiceBtnText.textContent = '🔄 Processing...';
+  voiceDisplay.textContent = 'Processing your audio...';
+  
+  recorder.stop();
+  isRecording = false;
+  
+  // Clean up media stream
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+    mediaStream = null;
+  }
+  
+  voiceBtnText.textContent = '🎙️ Start Recording';
+  voiceBtn.disabled = false;
 }
 
 // ---- UI helpers ----
@@ -209,12 +342,16 @@ chrome.runtime.onMessage.addListener((message) => {
     isAnalyzing = false;
     clearAnalyzeTimeout();
     showSuccess();
-
+  
     ensureSummaryUI();
     summaryText.value = message.summary || '';
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
     summaryModel.textContent  = message.model  ? `model: ${message.model}`   : '';
     summarySection.style.display = 'block';
+    
+    // Show voice recording UI after summary is ready
+    ensureVoiceUI();
+    voiceSection.style.display = 'block';
     return;
   }
 
