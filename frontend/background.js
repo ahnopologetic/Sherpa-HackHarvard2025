@@ -1,6 +1,12 @@
 // background.js (MV3 service worker)
 // Project Atlas — Central orchestrator for AI + TTS
 
+// ===== Side Panel Setup =====
+// Open side panel when extension icon is clicked
+chrome.action.onClicked.addListener((tab) => {
+  chrome.sidePanel.open({ windowId: tab.windowId });
+});
+
 // ===== Config =====
 const GEMINI_MODEL = 'gemini-2.5-flash'; // fast & low-cost; try 'gemini-2.5-pro' for higher quality
 const GEMINI_API_ENDPOINT =

@@ -6,10 +6,8 @@
   "permissions": [
     "activeTab",
     "tts",
-    "storage"
-  ],
-  "optional_permissions": [
-    "microphone"
+    "storage",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
@@ -20,10 +18,12 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png"
     }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "content_scripts": [
     {
