@@ -71,5 +71,6 @@ class InterpretResponse(BaseModel):
     target_section_id: str = Field(..., description="Present when resolvable")
     confidence: float
     tts_text: str = Field(..., description="Short text ready to read aloud")
+    transcription: Optional[str] = Field(None, description="Transcribed text from audio (for voice mode)")
     alternatives: List[AlternativeModel]
     telemetry: TelemetryModel

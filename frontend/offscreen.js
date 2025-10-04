@@ -78,7 +78,7 @@ async function startRecording(metadata) {
             mimeType: "audio/webm",
         });
         recorder.ondataavailable = (event) => data.push(event.data);
-        recorder.onstop = () => {
+        recorder.onstop = async () => {
             const blob = new Blob(data, { type: "audio/ogg; codecs=opus" });
             const url = URL.createObjectURL(blob);
 
@@ -87,12 +87,45 @@ async function startRecording(metadata) {
             // downloadLink.href = url;
             // downloadLink.download = `recording-${new Date().toISOString()}.ogg`;
             // downloadLink.click();
-            const formData = new FormData();
-            formData.append('audio', blob, `recording-${new Date().toISOString()}.webm`);
-            fetch(`http://localhost:8000/v1/sessions/${metadata.session_id}/interpret?mode=voice`, {
-                method: "POST",
-                body: formData,
-            });
+            
+            try {
+                const formData = new FormData();
+                formData.append('audio', blob, `recording-${new Date().toISOString()}.ogg`);
+                
+                const response = await fetch(`http://localhost:8000/v1/sessions/${metadata.session_id}/interpret?mode=voice`, {
+                    method: "POST",
+                    body: formData,
+                });
+
+                if (response.ok) {
+                    const interpretation = await response.json();
+                    console.log('Voice interpretation result:', interpretation);
+                    
+                    // Send interpretation result to popup
+                    chrome.runtime.sendMessage({
+                        type: "voice-interpretation-complete",
+                        target: "popup",
+                        interpretation: interpretation,
+                    });
+                } else {
+                    const errorText = await response.text();
+                    console.error('Interpretation failed:', errorText);
+                    
+                    chrome.runtime.sendMessage({
+                        type: "voice-interpretation-error",
+                        target: "popup",
+                        error: `Interpretation failed: ${response.status}`,
+                    });
+                }
+            } catch (error) {
+                console.error('Error sending audio for interpretation:', error);
+                
+                chrome.runtime.sendMessage({
+                    type: "voice-interpretation-error",
+                    target: "popup",
+                    error: error.message,
+                });
+            }
 
             // Cleanup
             URL.revokeObjectURL(url);

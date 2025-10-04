@@ -160,13 +160,14 @@ class InterpretService:
                 system_instruction=f"""
                 You are a helpful assistant that can interpret voice or text commands to navigate through different sections of a page.
                 You are given a section map of the page and a command.
-                If audio is provided, first transcribe it and then interpret the command.
-                You need to return the intent, target section id, confidence, tts text, and alternatives.
+                If audio is provided, first transcribe it and then interpret the command. Include the transcription in the "transcription" field.
+                You need to return the intent, target section id, confidence, tts text, transcription (for audio), and alternatives.
                 The intent can be NAVIGATE, READ_SECTION, LIST_SECTIONS, or UNKNOWN.
                 The target section id is the id of the section that the user wants to navigate to.
                 The confidence is a number between 0 and 1.
+                For the transcription field: if this is audio input, include the transcribed text. If text input, you can leave it null or copy the text.
 
-                Given the section map below, please interpret the command and return the intent, target section id, confidence, tts text, and alternatives.
+                Given the section map below, please interpret the command and return the intent, target section id, confidence, tts text, transcription, and alternatives.
                 {section_map}
                 """,
                 response_mime_type="application/json",

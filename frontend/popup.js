@@ -231,7 +231,7 @@ function ensureSummaryUI() {
 }
 
 // ---- Voice Command UI (Text Input Version) ----
-let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer;
+let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn;
 
 function ensureVoiceUI() {
   if (voiceSection) return;
@@ -290,13 +290,54 @@ function ensureVoiceUI() {
   textInput.style.fontSize = '14px';
   textInput.style.boxSizing = 'border-box';
 
+  // Button container for side-by-side layout
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.display = 'flex';
+  buttonContainer.style.gap = '8px';
+  buttonContainer.style.marginBottom = '10px';
+  buttonContainer.style.justifyContent = 'center';
+  buttonContainer.style.alignItems = 'stretch';
+
+  // Record button
+  recordBtn = document.createElement('button');
+  recordBtn.id = 'recordBtn';
+  recordBtn.textContent = '🎤 Record Audio';
+  recordBtn.className = 'primary-button';
+  recordBtn.setAttribute('aria-label', 'Record audio');
+  recordBtn.style.flex = '1';
+  recordBtn.style.maxWidth = '156px';
+  recordBtn.style.padding = '14px 24px';
+  recordBtn.style.background = 'white';
+  recordBtn.style.color = '#667eea';
+  recordBtn.style.border = 'none';
+  recordBtn.style.borderRadius = '8px';
+  recordBtn.style.cursor = 'pointer';
+  recordBtn.style.fontWeight = '700';
+  recordBtn.style.fontSize = '16px';
+  recordBtn.style.transition = 'all 0.2s ease';
+  recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  recordBtn.style.textTransform = 'uppercase';
+  recordBtn.style.letterSpacing = '0.5px';
+
+  // Hover effects for record button
+  recordBtn.addEventListener('mouseenter', () => {
+    if (!isRecording) {
+      recordBtn.style.transform = 'translateY(-2px) scale(1.02)';
+      recordBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+    }
+  });
+  recordBtn.addEventListener('mouseleave', () => {
+    if (!isRecording) {
+      recordBtn.style.transform = 'translateY(0) scale(1)';
+      recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+    }
+  });
+
   // Submit button (prominent primary action)
   submitBtn = document.createElement('button');
   submitBtn.textContent = 'Submit Command';
-  submitBtn.style.width = '100%';
-  submitBtn.style.maxWidth = '320px';
-  submitBtn.style.margin = '0 auto';
-  submitBtn.style.display = 'block';
+  submitBtn.style.flex = '1';
+  submitBtn.style.maxWidth = '156px';
   submitBtn.style.padding = '14px 24px';
   submitBtn.style.background = 'white';
   submitBtn.style.color = '#667eea';
@@ -305,7 +346,6 @@ function ensureVoiceUI() {
   submitBtn.style.cursor = 'pointer';
   submitBtn.style.fontWeight = '700';
   submitBtn.style.fontSize = '16px';
-  submitBtn.style.marginBottom = '10px';
   submitBtn.style.transition = 'all 0.2s ease';
   submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   submitBtn.style.textTransform = 'uppercase';
@@ -335,16 +375,21 @@ function ensureVoiceUI() {
 
   // Event listeners
   submitBtn.addEventListener('click', handleCommand);
+  recordBtn.addEventListener('click', handleRecordToggle);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
     }
   });
 
+  // Add buttons to button container
+  buttonContainer.appendChild(recordBtn);
+  buttonContainer.appendChild(submitBtn);
+
   voiceSection.appendChild(header);
   voiceSection.appendChild(quickNavContainer); // Add quick nav before input
   voiceSection.appendChild(textInput);
-  voiceSection.appendChild(submitBtn);
+  voiceSection.appendChild(buttonContainer); // Add button container instead of individual buttons
   voiceSection.appendChild(voiceDisplay);
 
   main.appendChild(voiceSection);
@@ -525,24 +570,24 @@ async function navigateToSection(sectionId) {
   console.log('🧭 NAVIGATING TO:', sectionId);
 }
 
-async function handleCommand() {
-  const command = textInput.value.trim();
-  if (!command) {
-    voiceDisplay.textContent = '❌ Please enter a command first.';
+// Process interpretation result (reusable for both text and voice commands)
+async function processInterpretation(interpretation, originalCommand = null) {
+  if (!voiceDisplay) {
+    console.error('voiceDisplay not initialized');
     return;
   }
 
-  submitBtn.disabled = true;
-  voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
+  console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
+
+  // Show the original command if provided (for voice commands)
+  let displayText = originalCommand 
+    ? `🎤 Heard: "${originalCommand}"\n\n💬 ${interpretation.tts_text}\n\n`
+    : `💬 ${interpretation.tts_text}\n\n`;
+
+  voiceDisplay.textContent = displayText;
 
   try {
-    // Step 1: Interpret the command
-    const interpretation = await interpretCommand(command);
-    console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
-    // Step 2: Show the TTS text from backend
-    voiceDisplay.textContent = `💬 ${interpretation.tts_text}\n\n`;
-
-    // Step 3: Navigate if intent is NAVIGATE
+    // Navigate if intent is NAVIGATE
     if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
       voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
 
@@ -567,6 +612,27 @@ async function handleCommand() {
         voiceDisplay.textContent += `\n  • ${alt.label} (${(alt.confidence * 100).toFixed(1)}%)`;
       });
     }
+  } catch (error) {
+    voiceDisplay.textContent += `\n\n❌ Navigation Error: ${error.message}`;
+  }
+}
+
+async function handleCommand() {
+  const command = textInput.value.trim();
+  if (!command) {
+    voiceDisplay.textContent = '❌ Please enter a command first.';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
+
+  try {
+    // Step 1: Interpret the command
+    const interpretation = await interpretCommand(command);
+    
+    // Step 2: Process the interpretation
+    await processInterpretation(interpretation);
 
     // Clear input
     textInput.value = '';
@@ -644,7 +710,7 @@ async function startAnalysis() {
 }
 
 // ---- Listen for background updates ----
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener(async (message) => {
   // Handle recording messages
   if (message.target === 'popup') {
     switch (message.type) {
@@ -656,10 +722,39 @@ chrome.runtime.onMessage.addListener((message) => {
       case 'recording-stopped':
         isRecording = false;
         updateRecordButtonState();
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🎤 Recording stopped. Processing audio...';
+        }
         break;
       case 'recording-started':
         isRecording = true;
         updateRecordButtonState();
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🔴 Recording in progress... Speak your command now.';
+        }
+        break;
+      case 'voice-interpretation-complete':
+        // Handle voice command interpretation result
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🔄 Processing voice command...';
+        }
+        try {
+          await processInterpretation(
+            message.interpretation, 
+            message.interpretation.transcription || 'Voice command'
+          );
+        } catch (error) {
+          if (voiceDisplay) {
+            voiceDisplay.textContent = `❌ Error processing voice command: ${error.message}`;
+          }
+        }
+        break;
+      case 'voice-interpretation-error':
+        if (voiceDisplay) {
+          voiceDisplay.textContent = `❌ Voice interpretation error: ${message.error}`;
+        } else {
+          alert(`Voice interpretation error: ${message.error}`);
+        }
         break;
     }
     return;
@@ -756,9 +851,6 @@ saveApiKeyBtn?.addEventListener('click', async () => {
 
 // ---- Analyze button ----
 analyzeBtn?.addEventListener('click', startAnalysis);
-
-// ---- Record button ----
-recordBtn?.addEventListener('click', handleRecordToggle);
 
 // (Optional) settings toggle if present
 settingsBtn?.addEventListener('click', () => {
