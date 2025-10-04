@@ -17,7 +17,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
     }
 });
 
-async function startRecording(streamId) {
+async function startRecording(metadata) {
     if (recorder?.state === "recording") {
         throw new Error("Called startRecording while recording is in progress.");
     }
@@ -30,7 +30,7 @@ async function startRecording(streamId) {
             audio: {
                 mandatory: {
                     chromeMediaSource: "tab",
-                    chromeMediaSourceId: streamId,
+                    chromeMediaSourceId: metadata.streamId,
                 },
             },
             video: false,
@@ -83,29 +83,45 @@ async function startRecording(streamId) {
             const url = URL.createObjectURL(blob);
 
             // Create temporary link element to trigger download
-            const downloadLink = document.createElement("a");
-            downloadLink.href = url;
-            downloadLink.download = `recording-${new Date().toISOString()}.webm`;
-            downloadLink.click();
+            // const downloadLink = document.createElement("a");
+            // downloadLink.href = url;
+            // downloadLink.download = `recording-${new Date().toISOString()}.webm`;
+            // downloadLink.click();
+            const formData = new FormData();
+            formData.append('audio', blob, `recording-${new Date().toISOString()}.webm`);
+            fetch(`http://localhost:8000/v1/sessions/${metadata.session_id}/interpret?mode=voice`, {
+                method: "POST",
+                body: formData,
+            });
 
             // Cleanup
             URL.revokeObjectURL(url);
             recorder = undefined;
             data = [];
 
+            // Notify both service worker and popup
             chrome.runtime.sendMessage({
                 type: "recording-stopped",
                 target: "service-worker",
+            });
+            chrome.runtime.sendMessage({
+                type: "recording-stopped",
+                target: "popup",
             });
         };
 
         recorder.start();
         window.location.hash = "recording";
 
+        // Notify service worker and popup that recording started
         chrome.runtime.sendMessage({
             type: "update-icon",
             target: "service-worker",
             recording: true,
+        });
+        chrome.runtime.sendMessage({
+            type: "recording-started",
+            target: "popup",
         });
     } catch (error) {
         console.error("Error starting recording:", error);
@@ -125,10 +141,15 @@ async function stopRecording() {
     await stopAllStreams();
     window.location.hash = "";
 
+    // Notify service worker and popup
     chrome.runtime.sendMessage({
         type: "update-icon",
         target: "service-worker",
         recording: false,
+    });
+    chrome.runtime.sendMessage({
+        type: "recording-stopped",
+        target: "popup",
     });
 }
 

@@ -12,18 +12,130 @@ const successIndicator = document.getElementById('successIndicator');
 const errorIndicator = document.getElementById('errorIndicator');
 const errorMessage = document.getElementById('errorMessage');
 
-const settingsBtn      = document.getElementById('settingsBtn');
-const settingsPanel    = document.getElementById('settingsPanel');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-const apiKeyInput      = document.getElementById('apiKey');
-const saveApiKeyBtn    = document.getElementById('saveApiKey');
-const apiKeyStatus     = document.getElementById('apiKeyStatus');
+const apiKeyInput = document.getElementById('apiKey');
+const saveApiKeyBtn = document.getElementById('saveApiKey');
+const apiKeyStatus = document.getElementById('apiKeyStatus');
 
 // ---- State ----
 let isAnalyzing = false;
 let analyzeTimeoutId = null;
 let currentSessionId = null;
 let pageStructureData = null;
+let isRecording = false;
+
+// ---- Microphone Permission Handling ----
+async function checkMicrophonePermission() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Clean up the stream immediately
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch (error) {
+    console.log('Microphone permission not granted:', error);
+    return false;
+  }
+}
+
+async function checkRecordingState() {
+  const hasPermission = await checkMicrophonePermission();
+  if (!hasPermission) {
+    // Open permission page if microphone access is not granted
+    chrome.tabs.create({ url: 'permission.html' });
+    return;
+  }
+
+  // Check if recording is already in progress
+  const contexts = await chrome.runtime.getContexts({});
+  const offscreenDocument = contexts.find(
+    (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+  );
+
+  if (offscreenDocument && offscreenDocument.documentUrl.endsWith('#recording')) {
+    isRecording = true;
+    updateRecordButtonState();
+  }
+}
+
+function updateRecordButtonState() {
+  if (!recordBtn) return;
+
+  if (isRecording) {
+    recordBtn.textContent = '⏹️ Stop Recording';
+    recordBtn.classList.add('recording');
+    recordBtn.style.background = '#ef4444';
+  } else {
+    recordBtn.textContent = '🎤 Record Audio';
+    recordBtn.classList.remove('recording');
+    recordBtn.style.background = '';
+  }
+}
+
+async function handleRecordToggle() {
+  if (isRecording) {
+    // Stop recording
+    chrome.runtime.sendMessage({
+      type: 'stop-recording',
+      target: 'offscreen'
+    });
+    isRecording = false;
+    updateRecordButtonState();
+  } else {
+    // Start recording
+    try {
+      const hasPermission = await checkMicrophonePermission();
+      if (!hasPermission) {
+        chrome.tabs.create({ url: 'permission.html' });
+        return;
+      }
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+        alert('Cannot record Chrome system pages. Please try on a regular webpage.');
+        return;
+      }
+
+      // Create offscreen document if it doesn't exist
+      const contexts = await chrome.runtime.getContexts({});
+      const offscreenDocument = contexts.find(
+        (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+      );
+
+      if (!offscreenDocument) {
+        await chrome.offscreen.createDocument({
+          url: 'offscreen.html',
+          reasons: ['USER_MEDIA'],
+          justification: 'Recording audio from the current tab'
+        });
+      }
+
+      // Get stream ID and start recording
+      const streamId = await chrome.tabCapture.getMediaStreamId({
+        targetTabId: tab.id
+      });
+
+      chrome.runtime.sendMessage({
+        type: 'start-recording',
+        target: 'offscreen',
+        data: {
+          streamId: streamId,
+          session_id: currentSessionId
+        }
+      });
+      console.log({ currentSessionId, streamId });
+
+      isRecording = true;
+      updateRecordButtonState();
+
+    } catch (error) {
+      console.error('Recording error:', error);
+      alert('Failed to start recording: ' + error.message);
+    }
+  }
+}
 
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
@@ -197,7 +309,7 @@ function ensureVoiceUI() {
   submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   submitBtn.style.textTransform = 'uppercase';
   submitBtn.style.letterSpacing = '0.5px';
-  
+
   // Hover effects for submit button
   submitBtn.addEventListener('mouseenter', () => {
     submitBtn.style.transform = 'translateY(-2px) scale(1.02)';
@@ -252,11 +364,11 @@ function populateNavigationSuggestions() {
     .filter(section => {
       // Prioritize content headings
       if (section.type === 'content') return true;
-      
+
       // Include main landmarks
       const goodRoles = ['main', 'footer', 'navigation'];
       if (goodRoles.includes(section.role)) return true;
-      
+
       return false;
     })
     .slice(0, 8); // Limit to 8 suggestions max
@@ -343,12 +455,12 @@ async function createBackendSession(pageData) {
 
     const result = await response.json();
     currentSessionId = result.session_id;
-    
+
     voiceDisplay.textContent = `✅ Session created! Click a suggestion below or type your command.`;
-    
+
     // Populate navigation suggestions
     populateNavigationSuggestions();
-    
+
     console.log('Session created:', currentSessionId);
     return result;
 
@@ -533,6 +645,26 @@ async function startAnalysis() {
 
 // ---- Listen for background updates ----
 chrome.runtime.onMessage.addListener((message) => {
+  // Handle recording messages
+  if (message.target === 'popup') {
+    switch (message.type) {
+      case 'recording-error':
+        alert(message.error);
+        isRecording = false;
+        updateRecordButtonState();
+        break;
+      case 'recording-stopped':
+        isRecording = false;
+        updateRecordButtonState();
+        break;
+      case 'recording-started':
+        isRecording = true;
+        updateRecordButtonState();
+        break;
+    }
+    return;
+  }
+
   if (message.type === 'atlas_status') {
     switch (message.status) {
       case 'loading':
@@ -611,7 +743,7 @@ saveApiKeyBtn?.addEventListener('click', async () => {
     apiKeyStatus.textContent = '✓ API key saved';
     apiKeyStatus.className = 'api-key-status success';
     apiKeyInput.value = '';
-    
+
     // Auto-close settings after 1 second
     setTimeout(() => {
       settingsPanel?.classList.add('hidden');
@@ -622,10 +754,25 @@ saveApiKeyBtn?.addEventListener('click', async () => {
   }
 });
 
+// ---- Analyze button ----
+analyzeBtn?.addEventListener('click', startAnalysis);
+
+// ---- Record button ----
+recordBtn?.addEventListener('click', handleRecordToggle);
+
+// (Optional) settings toggle if present
+settingsBtn?.addEventListener('click', () => {
+  if (!settingsPanel) return;
+  const isHidden = settingsPanel.classList.contains('hidden');
+  settingsPanel.classList.toggle('hidden', !isHidden);
+});
+
 // ---- Init ----
-(function init() {
+(async function init() {
   hideAllIndicators();
-  
+  // Check recording state and microphone permissions on popup load
+  await checkRecordingState();
+
   // Analyze button
   analyzeBtn?.addEventListener('click', startAnalysis);
 
