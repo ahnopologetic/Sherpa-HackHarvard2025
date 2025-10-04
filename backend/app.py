@@ -25,7 +25,9 @@ from services import SessionService, InterpretService
 from config import settings
 
 # Initialize FastAPI app
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('uvicorn.error')
+logger.setLevel(logging.DEBUG)
+
 app = FastAPI(
     title=settings.API_TITLE,
     description=settings.API_DESCRIPTION,

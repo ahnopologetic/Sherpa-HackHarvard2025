@@ -79,13 +79,13 @@ async function startRecording(metadata) {
         });
         recorder.ondataavailable = (event) => data.push(event.data);
         recorder.onstop = () => {
-            const blob = new Blob(data, { type: "audio/webm" });
+            const blob = new Blob(data, { type: "audio/ogg; codecs=opus" });
             const url = URL.createObjectURL(blob);
 
             // Create temporary link element to trigger download
             // const downloadLink = document.createElement("a");
             // downloadLink.href = url;
-            // downloadLink.download = `recording-${new Date().toISOString()}.webm`;
+            // downloadLink.download = `recording-${new Date().toISOString()}.ogg`;
             // downloadLink.click();
             const formData = new FormData();
             formData.append('audio', blob, `recording-${new Date().toISOString()}.webm`);
