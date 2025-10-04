@@ -155,22 +155,85 @@ function humanLabel(el) {
 
 function parsePageForMapping() {
   const sections = [];
-  const landmarks = document.querySelectorAll('main, aside, footer, nav, header, [role]');
   let counter = 0;
 
+  console.log('[Atlas] Starting enhanced page parsing...');
+
+  // ===== STEP 1: Capture ALL headings (h1-h6) with meaningful content =====
+  const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  headings.forEach((heading) => {
+    const text = (heading.innerText || heading.textContent || '').trim();
+    
+    // Skip empty or very short headings
+    if (!text || text.length < 2) return;
+    
+    // Skip navigation/UI headings (common patterns to ignore)
+    const lowerText = text.toLowerCase();
+    if (lowerText === 'contents' || 
+        lowerText === 'menu' || 
+        lowerText === 'navigation' ||
+        lowerText.startsWith('edit') ||
+        text.length > 100) return;
+
+    // Get or create ID for this heading
+    let id = heading.id;
+    
+    // If no ID, check if parent has ID (common pattern)
+    if (!id && heading.parentElement?.id) {
+      id = heading.parentElement.id;
+    }
+    
+    // Still no ID? Look for nearby element with ID
+    if (!id) {
+      const parent = heading.closest('[id]');
+      if (parent?.id) {
+        id = parent.id;
+      }
+    }
+    
+    // Last resort: generate an ID
+    if (!id) {
+      id = `${GEN_ID_PREFIX}heading-${counter++}`;
+      heading.id = id;
+    }
+
+    sections.push({
+      id,
+      label: text.substring(0, 80), // Reasonable length
+      role: 'heading',
+      level: heading.tagName.toLowerCase(),
+      type: 'content' // Mark as actual content section
+    });
+  });
+
+  console.log(`[Atlas] Found ${sections.length} heading-based sections`);
+
+  // ===== STEP 2: Capture landmark elements (but be selective) =====
+  const landmarks = document.querySelectorAll('main, footer, nav[role="navigation"], header[role="banner"]');
   landmarks.forEach((el) => {
     let id = el.id;
     if (!id) {
-      // assign a stable ID
-      id = `${GEN_ID_PREFIX}${counter++}`;
+      id = `${GEN_ID_PREFIX}landmark-${counter++}`;
       el.id = id;
     }
-    sections.push({
-      id,
-      label: humanLabel(el),
-      role: (el.getAttribute('role') || el.tagName.toLowerCase())
-    });
+    
+    const label = humanLabel(el);
+    
+    // Only add if it has a meaningful label
+    if (label && label !== 'div' && label !== el.tagName.toLowerCase()) {
+      sections.push({
+        id,
+        label,
+        role: (el.getAttribute('role') || el.tagName.toLowerCase()),
+        type: 'landmark'
+      });
+    }
   });
+
+  console.log(`[Atlas] Total sections mapped: ${sections.length}`);
+  
+  // Log first 10 sections for debugging
+  console.log('[Atlas] Sample sections:', sections.slice(0, 10));
 
   return {
     title: document.title || 'Untitled',

@@ -207,7 +207,9 @@ async function createBackendSession(pageData) {
         sections: pageData.sections,
         aliases: {} // Can be enhanced later
       }
+      
     };
+    console.log('📤 SENDING TO BACKEND:', JSON.stringify(payload, null, 2));
 
     const response = await fetch(`${BACKEND_BASE}/v1/sessions`, {
       method: 'POST',
@@ -288,6 +290,7 @@ async function navigateToSection(sectionId) {
     console.error('Navigation error:', error);
     throw error;
   }
+  console.log('🧭 NAVIGATING TO:', sectionId);
 }
 
 async function handleCommand() {
@@ -303,7 +306,7 @@ async function handleCommand() {
   try {
     // Step 1: Interpret the command
     const interpretation = await interpretCommand(command);
-    
+    console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
     // Step 2: Show the TTS text from backend
     voiceDisplay.textContent = `💬 ${interpretation.tts_text}\n\n`;
     
