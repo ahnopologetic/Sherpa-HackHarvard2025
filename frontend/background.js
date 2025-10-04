@@ -181,6 +181,15 @@ async function handlePageAnalysis(pageStructure) {
         throw new Error('API key not configured and built-in AI unavailable');
       }
     }
+    // Get current tab and request page structure for backend
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs && tabs[0]) {
+      try {
+        await requestPageForBackend(tabs[0].id);
+      } catch (err) {
+        console.warn('[Sherpa] Could not get page for backend:', err);
+      }
+    }
 
     // 🚀 Send summary to popup immediately (before TTS) so UI updates right away
     chrome.runtime.sendMessage({
@@ -198,15 +207,6 @@ async function handlePageAnalysis(pageStructure) {
 
     notifyPopup('complete');
 
-    // Get current tab and request page structure for backend
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs && tabs[0]) {
-      try {
-        await requestPageForBackend(tabs[0].id);
-      } catch (err) {
-        console.warn('[Atlas] Could not get page for backend:', err);
-      }
-    }
 
   } catch (error) {
     console.error('[Atlas] Analysis workflow error:', error);

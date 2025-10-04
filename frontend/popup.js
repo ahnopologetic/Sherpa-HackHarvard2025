@@ -1,7 +1,8 @@
 // popup.js — Project Sherpa
 
 // ---- Config ----
-const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+// const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
 const analyzeBtn = document.getElementById('analyzeBtn');
@@ -426,7 +427,7 @@ function populateNavigationSuggestions() {
 
 async function createBackendSession(pageData) {
   try {
-    voiceDisplay.textContent = '🔄 Creating navigation session...';
+    // voiceDisplay.textContent = '🔄 Creating navigation session...';
 
     const payload = {
       url: pageData.url,
@@ -456,17 +457,16 @@ async function createBackendSession(pageData) {
     const result = await response.json();
     currentSessionId = result.session_id;
 
-    voiceDisplay.textContent = `✅ Session created! Click a suggestion below or type your command.`;
-
-    // Populate navigation suggestions
+    // voiceDisplay.textContent = `✅ Session created! You can now use navigation commands.\n\nTry: "go to navigation", "scroll to footer", etc.`;
     populateNavigationSuggestions();
+
 
     console.log('Session created:', currentSessionId);
     return result;
 
   } catch (error) {
     console.error('Session creation error:', error);
-    voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
+    // voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
     throw error;
   }
 }
