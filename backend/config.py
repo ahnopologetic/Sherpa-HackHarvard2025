@@ -15,7 +15,7 @@ class Settings:
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
 
     # Session configuration
-    SESSION_EXPIRE_SECONDS: int = int(os.getenv("SESSION_EXPIRE_SECONDS", "900"))
+    SESSION_EXPIRE_SECONDS: int = int(os.getenv("SESSION_EXPIRE_SECONDS", "3600"))
 
     # CORS configuration
     CORS_ORIGINS: List[str] = os.getenv("CORS_ORIGINS", "*").split(",")

@@ -2,28 +2,141 @@
 
 // ---- Config ----
 const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+// const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
-const analyzeBtn       = document.getElementById('analyzeBtn');
-const buttonText       = document.getElementById('buttonText');
-const statusContainer  = document.getElementById('statusContainer');
+const analyzeBtn = document.getElementById('analyzeBtn');
+const buttonText = document.getElementById('buttonText');
+const statusContainer = document.getElementById('statusContainer');
 const loadingIndicator = document.getElementById('loadingIndicator');
 const successIndicator = document.getElementById('successIndicator');
-const errorIndicator   = document.getElementById('errorIndicator');
-const errorMessage     = document.getElementById('errorMessage');
+const errorIndicator = document.getElementById('errorIndicator');
+const errorMessage = document.getElementById('errorMessage');
 
-const settingsBtn      = document.getElementById('settingsBtn');
-const settingsPanel    = document.getElementById('settingsPanel');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-const apiKeyInput      = document.getElementById('apiKey');
-const saveApiKeyBtn    = document.getElementById('saveApiKey');
-const apiKeyStatus     = document.getElementById('apiKeyStatus');
+const apiKeyInput = document.getElementById('apiKey');
+const saveApiKeyBtn = document.getElementById('saveApiKey');
+const apiKeyStatus = document.getElementById('apiKeyStatus');
 
 // ---- State ----
 let isAnalyzing = false;
 let analyzeTimeoutId = null;
 let currentSessionId = null;
 let pageStructureData = null;
+let isRecording = false;
+
+// ---- Microphone Permission Handling ----
+async function checkMicrophonePermission() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Clean up the stream immediately
+    stream.getTracks().forEach(track => track.stop());
+    return true;
+  } catch (error) {
+    console.log('Microphone permission not granted:', error);
+    return false;
+  }
+}
+
+async function checkRecordingState() {
+  const hasPermission = await checkMicrophonePermission();
+  if (!hasPermission) {
+    // Open permission page if microphone access is not granted
+    chrome.tabs.create({ url: 'permission.html' });
+    return;
+  }
+
+  // Check if recording is already in progress
+  const contexts = await chrome.runtime.getContexts({});
+  const offscreenDocument = contexts.find(
+    (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+  );
+
+  if (offscreenDocument && offscreenDocument.documentUrl.endsWith('#recording')) {
+    isRecording = true;
+    updateRecordButtonState();
+  }
+}
+
+function updateRecordButtonState() {
+  if (!recordBtn) return;
+
+  if (isRecording) {
+    recordBtn.textContent = '⏹️ Stop Recording';
+    recordBtn.classList.add('recording');
+    recordBtn.style.background = '#ef4444';
+  } else {
+    recordBtn.textContent = '🎤 Record Audio';
+    recordBtn.classList.remove('recording');
+    recordBtn.style.background = '';
+  }
+}
+
+async function handleRecordToggle() {
+  if (isRecording) {
+    // Stop recording
+    chrome.runtime.sendMessage({
+      type: 'stop-recording',
+      target: 'offscreen'
+    });
+    isRecording = false;
+    updateRecordButtonState();
+  } else {
+    // Start recording
+    try {
+      const hasPermission = await checkMicrophonePermission();
+      if (!hasPermission) {
+        chrome.tabs.create({ url: 'permission.html' });
+        return;
+      }
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+        alert('Cannot record Chrome system pages. Please try on a regular webpage.');
+        return;
+      }
+
+      // Create offscreen document if it doesn't exist
+      const contexts = await chrome.runtime.getContexts({});
+      const offscreenDocument = contexts.find(
+        (c) => c.contextType === 'OFFSCREEN_DOCUMENT'
+      );
+
+      if (!offscreenDocument) {
+        await chrome.offscreen.createDocument({
+          url: 'offscreen.html',
+          reasons: ['USER_MEDIA'],
+          justification: 'Recording audio from the current tab'
+        });
+      }
+
+      // Get stream ID and start recording
+      const streamId = await chrome.tabCapture.getMediaStreamId({
+        targetTabId: tab.id
+      });
+
+      chrome.runtime.sendMessage({
+        type: 'start-recording',
+        target: 'offscreen',
+        data: {
+          streamId: streamId,
+          session_id: currentSessionId
+        }
+      });
+      console.log({ currentSessionId, streamId });
+
+      isRecording = true;
+      updateRecordButtonState();
+
+    } catch (error) {
+      console.error('Recording error:', error);
+      alert('Failed to start recording: ' + error.message);
+    }
+  }
+}
 
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
@@ -60,7 +173,7 @@ function ensureSummaryUI() {
   meta.style.gap = '8px';
 
   summarySource = document.createElement('span');
-  summaryModel  = document.createElement('span');
+  summaryModel = document.createElement('span');
   meta.appendChild(summarySource);
   meta.appendChild(summaryModel);
   header.appendChild(meta);
@@ -118,7 +231,7 @@ function ensureSummaryUI() {
 }
 
 // ---- Voice Command UI (Text Input Version) ----
-let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer;
+let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn;
 
 function ensureVoiceUI() {
   if (voiceSection) return;
@@ -177,13 +290,54 @@ function ensureVoiceUI() {
   textInput.style.fontSize = '14px';
   textInput.style.boxSizing = 'border-box';
 
+  // Button container for side-by-side layout
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.display = 'flex';
+  buttonContainer.style.gap = '8px';
+  buttonContainer.style.marginBottom = '10px';
+  buttonContainer.style.justifyContent = 'center';
+  buttonContainer.style.alignItems = 'stretch';
+
+  // Record button
+  recordBtn = document.createElement('button');
+  recordBtn.id = 'recordBtn';
+  recordBtn.textContent = '🎤 Record Audio';
+  recordBtn.className = 'primary-button';
+  recordBtn.setAttribute('aria-label', 'Record audio');
+  recordBtn.style.flex = '1';
+  recordBtn.style.maxWidth = '156px';
+  recordBtn.style.padding = '14px 24px';
+  recordBtn.style.background = 'white';
+  recordBtn.style.color = '#667eea';
+  recordBtn.style.border = 'none';
+  recordBtn.style.borderRadius = '8px';
+  recordBtn.style.cursor = 'pointer';
+  recordBtn.style.fontWeight = '700';
+  recordBtn.style.fontSize = '16px';
+  recordBtn.style.transition = 'all 0.2s ease';
+  recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  recordBtn.style.textTransform = 'uppercase';
+  recordBtn.style.letterSpacing = '0.5px';
+
+  // Hover effects for record button
+  recordBtn.addEventListener('mouseenter', () => {
+    if (!isRecording) {
+      recordBtn.style.transform = 'translateY(-2px) scale(1.02)';
+      recordBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+    }
+  });
+  recordBtn.addEventListener('mouseleave', () => {
+    if (!isRecording) {
+      recordBtn.style.transform = 'translateY(0) scale(1)';
+      recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+    }
+  });
+
   // Submit button (prominent primary action)
   submitBtn = document.createElement('button');
   submitBtn.textContent = 'Submit Command';
-  submitBtn.style.width = '100%';
-  submitBtn.style.maxWidth = '320px';
-  submitBtn.style.margin = '0 auto';
-  submitBtn.style.display = 'block';
+  submitBtn.style.flex = '1';
+  submitBtn.style.maxWidth = '156px';
   submitBtn.style.padding = '14px 24px';
   submitBtn.style.background = 'white';
   submitBtn.style.color = '#667eea';
@@ -192,12 +346,11 @@ function ensureVoiceUI() {
   submitBtn.style.cursor = 'pointer';
   submitBtn.style.fontWeight = '700';
   submitBtn.style.fontSize = '16px';
-  submitBtn.style.marginBottom = '10px';
   submitBtn.style.transition = 'all 0.2s ease';
   submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   submitBtn.style.textTransform = 'uppercase';
   submitBtn.style.letterSpacing = '0.5px';
-  
+
   // Hover effects for submit button
   submitBtn.addEventListener('mouseenter', () => {
     submitBtn.style.transform = 'translateY(-2px) scale(1.02)';
@@ -222,16 +375,21 @@ function ensureVoiceUI() {
 
   // Event listeners
   submitBtn.addEventListener('click', handleCommand);
+  recordBtn.addEventListener('click', handleRecordToggle);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
     }
   });
 
+  // Add buttons to button container
+  buttonContainer.appendChild(recordBtn);
+  buttonContainer.appendChild(submitBtn);
+
   voiceSection.appendChild(header);
   voiceSection.appendChild(quickNavContainer); // Add quick nav before input
   voiceSection.appendChild(textInput);
-  voiceSection.appendChild(submitBtn);
+  voiceSection.appendChild(buttonContainer); // Add button container instead of individual buttons
   voiceSection.appendChild(voiceDisplay);
 
   main.appendChild(voiceSection);
@@ -252,11 +410,11 @@ function populateNavigationSuggestions() {
     .filter(section => {
       // Prioritize content headings
       if (section.type === 'content') return true;
-      
+
       // Include main landmarks
       const goodRoles = ['main', 'footer', 'navigation'];
       if (goodRoles.includes(section.role)) return true;
-      
+
       return false;
     })
     .slice(0, 8); // Limit to 8 suggestions max
@@ -314,8 +472,8 @@ function populateNavigationSuggestions() {
 
 async function createBackendSession(pageData) {
   try {
-    voiceDisplay.textContent = '🔄 Creating navigation session...';
-    
+    // voiceDisplay.textContent = '🔄 Creating navigation session...';
+
     const payload = {
       url: pageData.url,
       locale: pageData.language || 'en-US',
@@ -324,7 +482,7 @@ async function createBackendSession(pageData) {
         sections: pageData.sections,
         aliases: {} // Can be enhanced later
       }
-      
+
     };
     console.log('📤 SENDING TO BACKEND:', JSON.stringify(payload, null, 2));
 
@@ -343,18 +501,17 @@ async function createBackendSession(pageData) {
 
     const result = await response.json();
     currentSessionId = result.session_id;
-    
-    voiceDisplay.textContent = `✅ Session created! Click a suggestion below or type your command.`;
-    
-    // Populate navigation suggestions
+
+    // voiceDisplay.textContent = `✅ Session created! You can now use navigation commands.\n\nTry: "go to navigation", "scroll to footer", etc.`;
     populateNavigationSuggestions();
-    
+
+
     console.log('Session created:', currentSessionId);
     return result;
-    
+
   } catch (error) {
     console.error('Session creation error:', error);
-    voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
+    // voiceDisplay.textContent = `❌ Failed to create session: ${error.message}\n\nMake sure your backend server is running at ${BACKEND_BASE}`;
     throw error;
   }
 }
@@ -384,7 +541,7 @@ async function interpretCommand(command) {
     const result = await response.json();
     console.log('Interpretation result:', result);
     return result;
-    
+
   } catch (error) {
     console.error('Interpretation error:', error);
     throw error;
@@ -413,29 +570,29 @@ async function navigateToSection(sectionId) {
   console.log('🧭 NAVIGATING TO:', sectionId);
 }
 
-async function handleCommand() {
-  const command = textInput.value.trim();
-  if (!command) {
-    voiceDisplay.textContent = '❌ Please enter a command first.';
+// Process interpretation result (reusable for both text and voice commands)
+async function processInterpretation(interpretation, originalCommand = null) {
+  if (!voiceDisplay) {
+    console.error('voiceDisplay not initialized');
     return;
   }
 
-  submitBtn.disabled = true;
-  voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
-  
+  console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
+
+  // Show the original command if provided (for voice commands)
+  let displayText = originalCommand 
+    ? `🎤 Heard: "${originalCommand}"\n\n💬 ${interpretation.tts_text}\n\n`
+    : `💬 ${interpretation.tts_text}\n\n`;
+
+  voiceDisplay.textContent = displayText;
+
   try {
-    // Step 1: Interpret the command
-    const interpretation = await interpretCommand(command);
-    console.log('🎯 INTERPRETATION:', JSON.stringify(interpretation, null, 2));
-    // Step 2: Show the TTS text from backend
-    voiceDisplay.textContent = `💬 ${interpretation.tts_text}\n\n`;
-    
-    // Step 3: Navigate if intent is NAVIGATE
+    // Navigate if intent is NAVIGATE
     if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
       voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
-      
+
       await navigateToSection(interpretation.target_section_id);
-      
+
       voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else if (interpretation.intent === 'LIST_SECTIONS') {
       voiceDisplay.textContent += '\n📋 Available sections:\n';
@@ -447,7 +604,7 @@ async function handleCommand() {
     } else {
       voiceDisplay.textContent += `\nIntent: ${interpretation.intent}`;
     }
-    
+
     // Show alternatives if available
     if (interpretation.alternatives && interpretation.alternatives.length > 0) {
       voiceDisplay.textContent += '\n\n📌 Alternatives:';
@@ -455,10 +612,31 @@ async function handleCommand() {
         voiceDisplay.textContent += `\n  • ${alt.label} (${(alt.confidence * 100).toFixed(1)}%)`;
       });
     }
+  } catch (error) {
+    voiceDisplay.textContent += `\n\n❌ Navigation Error: ${error.message}`;
+  }
+}
+
+async function handleCommand() {
+  const command = textInput.value.trim();
+  if (!command) {
+    voiceDisplay.textContent = '❌ Please enter a command first.';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
+
+  try {
+    // Step 1: Interpret the command
+    const interpretation = await interpretCommand(command);
     
+    // Step 2: Process the interpretation
+    await processInterpretation(interpretation);
+
     // Clear input
     textInput.value = '';
-    
+
   } catch (error) {
     voiceDisplay.textContent = `❌ Error: ${error.message}`;
   } finally {
@@ -470,7 +648,7 @@ async function handleCommand() {
 function hideAllIndicators() {
   loadingIndicator && loadingIndicator.classList.add('hidden');
   successIndicator && successIndicator.classList.add('hidden');
-  errorIndicator   && errorIndicator.classList.add('hidden');
+  errorIndicator && errorIndicator.classList.add('hidden');
 }
 
 function showLoading() {
@@ -532,7 +710,56 @@ async function startAnalysis() {
 }
 
 // ---- Listen for background updates ----
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener(async (message) => {
+  // Handle recording messages
+  if (message.target === 'popup') {
+    switch (message.type) {
+      case 'recording-error':
+        alert(message.error);
+        isRecording = false;
+        updateRecordButtonState();
+        break;
+      case 'recording-stopped':
+        isRecording = false;
+        updateRecordButtonState();
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🎤 Recording stopped. Processing audio...';
+        }
+        break;
+      case 'recording-started':
+        isRecording = true;
+        updateRecordButtonState();
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🔴 Recording in progress... Speak your command now.';
+        }
+        break;
+      case 'voice-interpretation-complete':
+        // Handle voice command interpretation result
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '🔄 Processing voice command...';
+        }
+        try {
+          await processInterpretation(
+            message.interpretation, 
+            message.interpretation.transcription || 'Voice command'
+          );
+        } catch (error) {
+          if (voiceDisplay) {
+            voiceDisplay.textContent = `❌ Error processing voice command: ${error.message}`;
+          }
+        }
+        break;
+      case 'voice-interpretation-error':
+        if (voiceDisplay) {
+          voiceDisplay.textContent = `❌ Voice interpretation error: ${message.error}`;
+        } else {
+          alert(`Voice interpretation error: ${message.error}`);
+        }
+        break;
+    }
+    return;
+  }
+
   if (message.type === 'atlas_status') {
     switch (message.status) {
       case 'loading':
@@ -565,25 +792,25 @@ chrome.runtime.onMessage.addListener((message) => {
     ensureSummaryUI();
     summaryText.value = message.summary || '';
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
-    summaryModel.textContent  = message.model  ? `model: ${message.model}`   : '';
+    summaryModel.textContent = message.model ? `model: ${message.model}` : '';
     summarySection.style.display = 'block';
-    
+
     // Show voice command UI and create backend session
     ensureVoiceUI();
     voiceSection.style.display = 'block';
-    
+
     // Store page structure for later use
     if (message.pageStructure) {
       pageStructureData = message.pageStructure;
     }
-    
+
     return;
   }
 
   // Handle page structure data for backend session
   if (message.type === 'page_structure_for_session') {
     pageStructureData = message.data;
-    
+
     // Create backend session with the page structure
     createBackendSession(message.data).catch(error => {
       console.error('Failed to create backend session:', error);
@@ -611,7 +838,7 @@ saveApiKeyBtn?.addEventListener('click', async () => {
     apiKeyStatus.textContent = '✓ API key saved';
     apiKeyStatus.className = 'api-key-status success';
     apiKeyInput.value = '';
-    
+
     // Auto-close settings after 1 second
     setTimeout(() => {
       settingsPanel?.classList.add('hidden');
@@ -622,10 +849,22 @@ saveApiKeyBtn?.addEventListener('click', async () => {
   }
 });
 
+// ---- Analyze button ----
+analyzeBtn?.addEventListener('click', startAnalysis);
+
+// (Optional) settings toggle if present
+settingsBtn?.addEventListener('click', () => {
+  if (!settingsPanel) return;
+  const isHidden = settingsPanel.classList.contains('hidden');
+  settingsPanel.classList.toggle('hidden', !isHidden);
+});
+
 // ---- Init ----
-(function init() {
+(async function init() {
   hideAllIndicators();
-  
+  // Check recording state and microphone permissions on popup load
+  await checkRecordingState();
+
   // Analyze button
   analyzeBtn?.addEventListener('click', startAnalysis);
 

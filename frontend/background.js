@@ -27,7 +27,7 @@ function asApiErrorText(data) {
 
 function notifyPopup(status, detail) {
   // Safe if no popup is open
-  chrome.runtime.sendMessage({ type: 'atlas_status', status, detail }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'atlas_status', status, detail }).catch(() => { });
 }
 
 // ===== Prompt builder =====
@@ -181,6 +181,15 @@ async function handlePageAnalysis(pageStructure) {
         throw new Error('API key not configured and built-in AI unavailable');
       }
     }
+    // Get current tab and request page structure for backend
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs && tabs[0]) {
+      try {
+        await requestPageForBackend(tabs[0].id);
+      } catch (err) {
+        console.warn('[Sherpa] Could not get page for backend:', err);
+      }
+    }
 
     // 🚀 Send summary to popup immediately (before TTS) so UI updates right away
     chrome.runtime.sendMessage({
@@ -189,7 +198,7 @@ async function handlePageAnalysis(pageStructure) {
       source: usedSource || (apiKey ? 'cloud' : 'built-in'),
       model: GEMINI_MODEL,
       pageStructure: pageStructure // Send page structure too
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Then speak, updating status along the way
     notifyPopup('speaking', 'Speaking summary…');
@@ -197,17 +206,8 @@ async function handlePageAnalysis(pageStructure) {
     await speakText(summary, langHint);
 
     notifyPopup('complete');
-    
-    // Get current tab and request page structure for backend
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tabs && tabs[0]) {
-      try {
-        await requestPageForBackend(tabs[0].id);
-      } catch (err) {
-        console.warn('[Atlas] Could not get page for backend:', err);
-      }
-    }
-    
+
+
   } catch (error) {
     console.error('[Atlas] Analysis workflow error:', error);
 
@@ -221,19 +221,82 @@ async function handlePageAnalysis(pageStructure) {
     }
 
     notifyPopup('error', error.message);
-    await speakText(audible).catch(() => {});
-    chrome.runtime.sendMessage({ type: 'analysis_error', error: error.message }).catch(() => {});
+    await speakText(audible).catch(() => { });
+    chrome.runtime.sendMessage({ type: 'analysis_error', error: error.message }).catch(() => { });
     throw error;
   }
 }
 
 // ===== Message wiring =====
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, _sender, sendResponse) => {
   if (message?.type === 'page_structure_extracted') {
     handlePageAnalysis(message.data)
       .then(() => sendResponse({ status: 'success' }))
       .catch((e) => sendResponse({ status: 'error', message: e.message }));
     return true; // keep port open for async
+  }
+
+  if (message.target === "service-worker") {
+    switch (message.type) {
+      case "request-recording":
+        try {
+          const [tab] = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          });
+
+          // Check if we can record this tab
+          if (
+            !tab ||
+            tab.url.startsWith("chrome://") ||
+            tab.url.startsWith("chrome-extension://")
+          ) {
+            chrome.runtime.sendMessage({
+              type: "recording-error",
+              target: "offscreen",
+              error:
+                "Cannot record Chrome system pages. Please try on a regular webpage.",
+            });
+            return;
+          }
+
+          // Ensure we have access to the tab
+          await chrome.tabs.update(tab.id, {});
+
+          // Get a MediaStream for the active tab
+          const streamId = await chrome.tabCapture.getMediaStreamId({
+            targetTabId: tab.id,
+          });
+
+          // Send the stream ID to the offscreen document to start recording
+          chrome.runtime.sendMessage({
+            type: "start-recording",
+            target: "offscreen",
+            data: streamId,
+          });
+
+          chrome.action.setIcon({ path: "/icons/recording.png" });
+        } catch (error) {
+          chrome.runtime.sendMessage({
+            type: "recording-error",
+            target: "offscreen",
+            error: error.message,
+          });
+        }
+        break;
+
+      case "recording-stopped":
+        chrome.action.setIcon({ path: "icons/not-recording.png" });
+        break;
+
+      case "update-icon":
+        chrome.action.setIcon({
+          path: message.recording
+            ? "icons/recording.png"
+            : "icons/not-recording.png",
+        });
+        break;
+    }
   }
 });
 

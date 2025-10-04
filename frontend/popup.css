@@ -71,6 +71,26 @@
     cursor: not-allowed;
     transform: none;
   }
+
+  /* Recording button specific styles */
+  #recordBtn {
+    transition: background 0.3s ease, transform 0.2s ease;
+  }
+
+  #recordBtn.recording {
+    background: #ef4444;
+    color: white;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+    }
+    50% {
+      box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6);
+    }
+  }
   
   .status-container {
     min-height: 60px;

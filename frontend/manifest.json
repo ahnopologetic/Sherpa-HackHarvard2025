@@ -7,12 +7,15 @@
     "activeTab",
     "tts",
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "offscreen",
+    "tabCapture"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
     "http://sherpa-hackharvard2025-production.up.railway.app/*",
-    "https://sherpa-hackharvard2025-production.up.railway.app/*"
+    "https://sherpa-hackharvard2025-production.up.railway.app/*",
+    "*://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -36,5 +39,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["permission.html", "offscreen.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
