@@ -92,7 +92,7 @@ async function startRecording(metadata) {
                 const formData = new FormData();
                 formData.append('audio', blob, `recording-${new Date().toISOString()}.ogg`);
                 
-                const response = await fetch(`http://localhost:8000/v1/sessions/${metadata.session_id}/interpret?mode=voice`, {
+                const response = await fetch(`${BACKEND_BASE}/v1/sessions/${metadata.session_id}/interpret?mode=voice`, {
                     method: "POST",
                     body: formData,
                 });
