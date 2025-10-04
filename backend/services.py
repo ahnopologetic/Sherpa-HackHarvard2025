@@ -120,15 +120,10 @@ class InterpretService:
         # Get session data
         session = SessionService.get_session(session_id)
         if not session:
-            session = {}
-            # TODO: validate session
-            # raise ValueError("Invalid or expired session")
+            raise ValueError("Invalid or expired session")
 
         client = genai.Client(
             api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
-            vertexai=True,
-            project="humphreyahnusa",
-            location="us-central1",
         )
 
         section_map = session.get("section_map") or MOCK_SECTION_MAP
