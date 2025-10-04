@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Atlas</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Project Atlas</h1>
+      <p class="subtitle">AI Page Structure Analysis</p>
+    </header>
+    
+    <main>
+      <button id="analyzeBtn" class="primary-button" aria-label="Analyze current page structure">
+        <span id="buttonText">Analyze Page Structure</span>
+      </button>
+      
+      <div id="statusContainer" class="status-container" role="status" aria-live="polite">
+        <div id="loadingIndicator" class="loading hidden">
+          <div class="spinner"></div>
+          <span>Analyzing page...</span>
+        </div>
+        
+        <div id="successIndicator" class="success hidden">
+          <svg class="checkmark" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          </svg>
+          <span>Analysis complete!</span>
+        </div>
+        
+        <div id="errorIndicator" class="error hidden">
+          <svg class="error-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <span id="errorMessage">Analysis failed</span>
+        </div>
+      </div>
+      <section id="summarySection" class="summary-section hidden" aria-live="polite">
+        <div class="summary-header">
+          <h2 class="summary-title">Summary</h2>
+          <div class="summary-meta">
+            <span id="summarySource" title="Source (cloud or built-in)"></span>
+            <span id="summaryModel" title="Model name"></span>
+          </div>
+        </div>
+      
+        <textarea id="summaryText" class="summary-text" rows="7" readonly
+          aria-label="AI generated summary"></textarea>
+      
+        <div class="summary-actions">
+          <button id="copySummaryBtn" class="copy-button" aria-label="Copy summary to clipboard">Copy</button>
+        </div>
+      </section>
+      
+      
+      <div id="settingsSection" class="settings-section">
+        <button id="settingsBtn" class="settings-button" aria-label="Configure API settings">
+          ⚙️ Settings
+        </button>
+        
+        <div id="settingsPanel" class="settings-panel hidden">
+          <label for="apiKey">Google Gemini API Key:</label>
+          <input 
+            type="password" 
+            id="apiKey" 
+            placeholder="Enter your API key"
+            aria-describedby="apiKeyHelp"
+          >
+          <small id="apiKeyHelp">Get your free API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></small>
+          <button id="saveApiKey" class="save-button">Save Key</button>
+          <div id="apiKeyStatus" class="api-key-status"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
