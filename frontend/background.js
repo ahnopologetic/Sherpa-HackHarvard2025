@@ -1,5 +1,5 @@
 // background.js (MV3 service worker)
-// Project Atlas — Central orchestrator for AI + TTS
+// Project Sherpa — Central orchestrator for AI + TTS
 
 // ===== Side Panel Setup =====
 // Open side panel when extension icon is clicked

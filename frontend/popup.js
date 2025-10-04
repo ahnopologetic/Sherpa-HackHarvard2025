@@ -1,4 +1,4 @@
-// popup.js — Project Atlas
+// popup.js — Project Sherpa
 
 // ---- Config ----
 const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
@@ -76,9 +76,10 @@ function ensureSummaryUI() {
   summaryText.style.padding = '10px';
   summaryText.style.background = 'rgba(255,255,255,0.9)';
   summaryText.style.color = '#1f2937';
-  summaryText.style.lineHeight = '1.35';
+  summaryText.style.lineHeight = '1.6';
+  summaryText.style.fontSize = '14px';
   summaryText.style.fontFamily =
-    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
   const actions = document.createElement('div');
   actions.style.display = 'flex';
@@ -116,7 +117,7 @@ function ensureSummaryUI() {
 }
 
 // ---- Voice Command UI (Text Input Version) ----
-let voiceSection, textInput, submitBtn, voiceDisplay;
+let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer;
 
 function ensureVoiceUI() {
   if (voiceSection) return;
@@ -139,6 +140,29 @@ function ensureVoiceUI() {
   title.style.fontSize = '16px';
   title.style.fontWeight = '700';
   header.appendChild(title);
+
+  // Quick Navigation Suggestions
+  quickNavContainer = document.createElement('div');
+  quickNavContainer.id = 'quickNavContainer';
+  quickNavContainer.style.marginTop = '12px';
+  quickNavContainer.style.marginBottom = '12px';
+  quickNavContainer.style.display = 'none'; // Hidden until we have suggestions
+
+  const quickNavTitle = document.createElement('div');
+  quickNavTitle.textContent = '✨ Quick Navigation:';
+  quickNavTitle.style.fontSize = '13px';
+  quickNavTitle.style.fontWeight = '600';
+  quickNavTitle.style.marginBottom = '8px';
+  quickNavTitle.style.color = '#fff';
+  quickNavTitle.style.opacity = '0.9';
+  quickNavContainer.appendChild(quickNavTitle);
+
+  const suggestionsContainer = document.createElement('div');
+  suggestionsContainer.id = 'suggestionsContainer';
+  suggestionsContainer.style.display = 'flex';
+  suggestionsContainer.style.flexWrap = 'wrap';
+  suggestionsContainer.style.gap = '6px';
+  quickNavContainer.appendChild(suggestionsContainer);
 
   // Text input for commands
   textInput = document.createElement('input');
@@ -186,11 +210,84 @@ function ensureVoiceUI() {
   });
 
   voiceSection.appendChild(header);
+  voiceSection.appendChild(quickNavContainer); // Add quick nav before input
   voiceSection.appendChild(textInput);
   voiceSection.appendChild(submitBtn);
   voiceSection.appendChild(voiceDisplay);
 
   main.appendChild(voiceSection);
+}
+
+// ---- Quick Navigation Suggestions ----
+function populateNavigationSuggestions() {
+  if (!pageStructureData || !pageStructureData.sections) return;
+
+  const suggestionsContainer = document.getElementById('suggestionsContainer');
+  if (!suggestionsContainer) return;
+
+  // Clear existing suggestions
+  suggestionsContainer.innerHTML = '';
+
+  // Get interesting sections (content sections, not UI elements)
+  const interestingSections = pageStructureData.sections
+    .filter(section => {
+      // Prioritize content headings
+      if (section.type === 'content') return true;
+      
+      // Include main landmarks
+      const goodRoles = ['main', 'footer', 'navigation'];
+      if (goodRoles.includes(section.role)) return true;
+      
+      return false;
+    })
+    .slice(0, 8); // Limit to 8 suggestions max
+
+  if (interestingSections.length === 0) {
+    quickNavContainer.style.display = 'none';
+    return;
+  }
+
+  // Create suggestion buttons
+  interestingSections.forEach(section => {
+    const btn = document.createElement('button');
+    btn.textContent = section.label;
+    btn.style.padding = '6px 12px';
+    btn.style.background = 'rgba(255, 255, 255, 0.95)';
+    btn.style.color = '#1f2937';
+    btn.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+    btn.style.borderRadius = '16px';
+    btn.style.fontSize = '12px';
+    btn.style.fontWeight = '500';
+    btn.style.cursor = 'pointer';
+    btn.style.transition = 'all 0.2s';
+    btn.style.whiteSpace = 'nowrap';
+    btn.style.overflow = 'hidden';
+    btn.style.textOverflow = 'ellipsis';
+    btn.style.maxWidth = '150px';
+
+    // Hover effects
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = '#10b981';
+      btn.style.color = 'white';
+      btn.style.transform = 'scale(1.05)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255, 255, 255, 0.95)';
+      btn.style.color = '#1f2937';
+      btn.style.transform = 'scale(1)';
+    });
+
+    // Click to navigate
+    btn.addEventListener('click', async () => {
+      textInput.value = `go to ${section.label}`;
+      await handleCommand();
+    });
+
+    suggestionsContainer.appendChild(btn);
+  });
+
+  // Show the container
+  quickNavContainer.style.display = 'block';
 }
 
 // ---- Backend Integration Functions ----
@@ -227,7 +324,10 @@ async function createBackendSession(pageData) {
     const result = await response.json();
     currentSessionId = result.session_id;
     
-    voiceDisplay.textContent = `✅ Session created! You can now use navigation commands.\n\nTry: "go to navigation", "scroll to footer", etc.`;
+    voiceDisplay.textContent = `✅ Session created! Click a suggestion below or type your command.`;
+    
+    // Populate navigation suggestions
+    populateNavigationSuggestions();
     
     console.log('Session created:', currentSessionId);
     return result;

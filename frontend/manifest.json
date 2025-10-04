@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Project Atlas - AI Page Summaries",
+  "name": "Sherpa - Navigate with clarity",
   "version": "1.0.0",
   "description": "AI-powered webpage structure summaries for screen reader users",
   "permissions": [
