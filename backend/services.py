@@ -127,8 +127,6 @@ class InterpretService:
         client = genai.Client(
             api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
             vertexai=True,
-            project="humphreyahnusa",
-            location="us-central1",
         )
 
         section_map = session.get("section_map") or MOCK_SECTION_MAP
