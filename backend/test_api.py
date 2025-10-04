@@ -55,16 +55,43 @@ def test_create_session():
 
 
 def test_interpret_command(session_id: str):
-    """Test interpreting a command"""
-    print(f"\nTesting: GET /v1/sessions/{session_id}/interpret")
+    """Test interpreting a text command"""
+    print(f"\nTesting: POST /v1/sessions/{session_id}/interpret (text mode)")
     
-    params = {
-        "mode": "text"
+    params = {"mode": "text"}
+    data = {
+        "text": "go to comments",
+        "hint": "navigate"
     }
     
-    response = requests.get(
+    response = requests.post(
         f"{BASE_URL}/v1/sessions/{session_id}/interpret",
-        params=params
+        params=params,
+        data=data
+    )
+    print(f"Status: {response.status_code}")
+    print(f"Response: {json.dumps(response.json(), indent=2)}")
+
+
+def test_interpret_voice_command(session_id: str):
+    """Test interpreting a voice command (mock)"""
+    print(f"\nTesting: POST /v1/sessions/{session_id}/interpret (voice mode)")
+    
+    params = {"mode": "voice"}
+    
+    # Create a mock audio file (in real scenario, this would be actual audio)
+    files = {
+        "audio": ("test_audio.wav", b"mock audio data", "audio/wav")
+    }
+    data = {
+        "hint": "navigate"
+    }
+    
+    response = requests.post(
+        f"{BASE_URL}/v1/sessions/{session_id}/interpret",
+        params=params,
+        files=files,
+        data=data
     )
     print(f"Status: {response.status_code}")
     print(f"Response: {json.dumps(response.json(), indent=2)}")
@@ -90,10 +117,13 @@ if __name__ == "__main__":
     session_id = test_create_session()
     
     if session_id:
-        # Test command interpretation
+        # Test text command interpretation
         test_interpret_command(session_id)
+        
+        # Test voice command interpretation
+        test_interpret_voice_command(session_id)
     else:
-        print("\nFailed to create session. Skipping interpretation test.")
+        print("\nFailed to create session. Skipping interpretation tests.")
     
     print("\n" + "=" * 60)
     print("Tests completed!")

@@ -66,16 +66,17 @@ Create a short-lived "page session" so the server can reuse the section map and 
 ```
 
 ### 2. Interpret Command
-**GET** `/v1/sessions/{session_id}/interpret`
+**POST** `/v1/sessions/{session_id}/interpret`
 
 Interpret a voice or text command to determine user intent and target section.
 
 **Query Parameters:**
 - `mode`: "voice" or "text" (default: "text")
 
-**Form Data:**
-- `audio`: Audio file (wav/mp3/ogg) for voice mode
-- `hint`: Optional hint ("navigate|read|list")
+**Form Data (multipart/form-data):**
+- `audio`: Audio file (wav/mp3/ogg) for voice mode - binary file upload
+- `text`: Text command for text mode - string
+- `hint`: Optional hint ("navigate|read|list") - string
 
 **Response:**
 ```json

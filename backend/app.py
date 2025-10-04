@@ -2,11 +2,23 @@
 Sherpa API - FastAPI application for voice-controlled web navigation
 """
 
-from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Query, Path
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    File,
+    UploadFile,
+    Form,
+    Query,
+    Path,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
-from models import CreateSessionRequest, CreateSessionResponse, InterpretResponse
+from models import (
+    CreateSessionRequest,
+    CreateSessionResponse,
+    InterpretResponse,
+)
 from services import SessionService, InterpretService
 from config import settings
 
@@ -50,7 +62,7 @@ async def create_session(request: CreateSessionRequest) -> CreateSessionResponse
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get(
+@app.post(
     "/v1/sessions/{session_id}/interpret",
     response_model=InterpretResponse,
     summary="Interpret a command (text or audio)",
@@ -59,18 +71,18 @@ async def create_session(request: CreateSessionRequest) -> CreateSessionResponse
 async def interpret_command(
     session_id: str = Path(..., description="Session identifier"),
     mode: str = Query("text", description="Mode: 'voice' or 'text'"),
-    audio: Optional[UploadFile] = File(
-        None, description="Audio file (wav/mp3/ogg), 16k–48kHz"
-    ),
+    audio: Optional[UploadFile] = File(None, description="Audio file (wav/mp3/ogg), 16k–48kHz"),
+    text: Optional[str] = Form(None, description="Text command (for text mode)"),
     hint: Optional[str] = Form(None, description="Optional hint: 'navigate|read|list'"),
 ) -> InterpretResponse:
     """
-    Interpret a voice or text command.
+    Interpret a voice or text command using form data.
 
     Args:
         session_id: The session identifier
         mode: "voice" or "text"
-        audio: Audio file (for voice mode)
+        audio: Audio file (for voice mode) - multipart/form-data
+        text: Text command (for text mode) - form field
         hint: Optional hint about expected intent
 
     Returns:
@@ -84,10 +96,14 @@ async def interpret_command(
 
         # Call interpretation service
         result = InterpretService.interpret_command(
-            session_id=session_id, mode=mode, audio=audio_bytes, hint=hint
+            session_id=session_id,
+            mode=mode,
+            audio=audio_bytes,
+            text=text,
+            hint=hint,
         )
 
-        return InterpretResponse(**result)
+        return result.parsed
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -104,4 +120,6 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)
+    uvicorn.run(
+        "app:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG
+    )
