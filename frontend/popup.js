@@ -14,6 +14,7 @@ const errorMessage     = document.getElementById('errorMessage');
 
 const settingsBtn      = document.getElementById('settingsBtn');
 const settingsPanel    = document.getElementById('settingsPanel');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
 const apiKeyInput      = document.getElementById('apiKey');
 const saveApiKeyBtn    = document.getElementById('saveApiKey');
 const apiKeyStatus     = document.getElementById('apiKeyStatus');
@@ -176,18 +177,36 @@ function ensureVoiceUI() {
   textInput.style.fontSize = '14px';
   textInput.style.boxSizing = 'border-box';
 
-  // Submit button
+  // Submit button (prominent primary action)
   submitBtn = document.createElement('button');
   submitBtn.textContent = 'Submit Command';
   submitBtn.style.width = '100%';
-  submitBtn.style.padding = '10px';
-  submitBtn.style.background = '#10b981';
-  submitBtn.style.color = 'white';
+  submitBtn.style.maxWidth = '320px';
+  submitBtn.style.margin = '0 auto';
+  submitBtn.style.display = 'block';
+  submitBtn.style.padding = '14px 24px';
+  submitBtn.style.background = 'white';
+  submitBtn.style.color = '#667eea';
   submitBtn.style.border = 'none';
-  submitBtn.style.borderRadius = '4px';
+  submitBtn.style.borderRadius = '8px';
   submitBtn.style.cursor = 'pointer';
-  submitBtn.style.fontWeight = '600';
+  submitBtn.style.fontWeight = '700';
+  submitBtn.style.fontSize = '16px';
   submitBtn.style.marginBottom = '10px';
+  submitBtn.style.transition = 'all 0.2s ease';
+  submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  submitBtn.style.textTransform = 'uppercase';
+  submitBtn.style.letterSpacing = '0.5px';
+  
+  // Hover effects for submit button
+  submitBtn.addEventListener('mouseenter', () => {
+    submitBtn.style.transform = 'translateY(-2px) scale(1.02)';
+    submitBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+  });
+  submitBtn.addEventListener('mouseleave', () => {
+    submitBtn.style.transform = 'translateY(0) scale(1)';
+    submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  });
 
   voiceDisplay = document.createElement('div');
   voiceDisplay.id = 'voiceDisplay';
@@ -247,34 +266,35 @@ function populateNavigationSuggestions() {
     return;
   }
 
-  // Create suggestion buttons
+  // Create suggestion buttons (inverted style - purple background)
   interestingSections.forEach(section => {
     const btn = document.createElement('button');
     btn.textContent = section.label;
-    btn.style.padding = '6px 12px';
-    btn.style.background = 'rgba(255, 255, 255, 0.95)';
-    btn.style.color = '#1f2937';
-    btn.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-    btn.style.borderRadius = '16px';
-    btn.style.fontSize = '12px';
-    btn.style.fontWeight = '500';
+    btn.style.padding = '8px 16px';
+    btn.style.background = '#667eea';
+    btn.style.color = 'white';
+    btn.style.border = 'none';
+    btn.style.borderRadius = '20px';
+    btn.style.fontSize = '13px';
+    btn.style.fontWeight = '600';
     btn.style.cursor = 'pointer';
-    btn.style.transition = 'all 0.2s';
+    btn.style.transition = 'all 0.2s ease';
     btn.style.whiteSpace = 'nowrap';
     btn.style.overflow = 'hidden';
     btn.style.textOverflow = 'ellipsis';
     btn.style.maxWidth = '150px';
+    btn.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.3)';
 
     // Hover effects
     btn.addEventListener('mouseenter', () => {
-      btn.style.background = '#10b981';
-      btn.style.color = 'white';
-      btn.style.transform = 'scale(1.05)';
+      btn.style.background = '#5a67d8';
+      btn.style.transform = 'translateY(-2px) scale(1.05)';
+      btn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.5)';
     });
     btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'rgba(255, 255, 255, 0.95)';
-      btn.style.color = '#1f2937';
-      btn.style.transform = 'scale(1)';
+      btn.style.background = '#667eea';
+      btn.style.transform = 'translateY(0) scale(1)';
+      btn.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.3)';
     });
 
     // Click to navigate
@@ -591,24 +611,52 @@ saveApiKeyBtn?.addEventListener('click', async () => {
     apiKeyStatus.textContent = '✓ API key saved';
     apiKeyStatus.className = 'api-key-status success';
     apiKeyInput.value = '';
+    
+    // Auto-close settings after 1 second
+    setTimeout(() => {
+      settingsPanel?.classList.add('hidden');
+    }, 1000);
   } catch {
     apiKeyStatus.textContent = 'Failed to save API key';
     apiKeyStatus.className = 'api-key-status error';
   }
 });
 
-// ---- Analyze button ----
-analyzeBtn?.addEventListener('click', startAnalysis);
-
-// (Optional) settings toggle if present
-settingsBtn?.addEventListener('click', () => {
-  if (!settingsPanel) return;
-  const isHidden = settingsPanel.classList.contains('hidden');
-  settingsPanel.classList.toggle('hidden', !isHidden);
-});
-
 // ---- Init ----
 (function init() {
   hideAllIndicators();
+  
+  // Analyze button
+  analyzeBtn?.addEventListener('click', startAnalysis);
+
+  // Settings button - open overlay
+  settingsBtn?.addEventListener('click', () => {
+    console.log('Settings button clicked'); // Debug
+    if (!settingsPanel) {
+      console.error('Settings panel not found!');
+      return;
+    }
+    settingsPanel.classList.remove('hidden');
+  });
+
+  // Close settings button
+  if (closeSettingsBtn) {
+    closeSettingsBtn.addEventListener('click', (e) => {
+      console.log('Close button clicked'); // Debug
+      e.stopPropagation(); // Prevent event bubbling
+      if (settingsPanel) {
+        settingsPanel.classList.add('hidden');
+      }
+    });
+  } else {
+    console.error('Close settings button not found!');
+  }
+
+  // Close settings when clicking outside the panel
+  settingsPanel?.addEventListener('click', (e) => {
+    if (e.target === settingsPanel) {
+      settingsPanel.classList.add('hidden');
+    }
+  });
 })();
 

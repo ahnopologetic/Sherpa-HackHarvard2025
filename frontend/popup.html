@@ -8,6 +8,11 @@
 </head>
 <body>
   <div class="container">
+    <!-- Settings button in top-right corner -->
+    <button id="settingsBtn" class="settings-icon-button" aria-label="Configure API settings" title="Settings">
+      ⚙️
+    </button>
+    
     <header>
       <h1>Sherpa</h1>
       <p class="subtitle">AI Page Structure Analysis</p>
@@ -56,12 +61,14 @@
       </section>
       
       
-      <div id="settingsSection" class="settings-section">
-        <button id="settingsBtn" class="settings-button" aria-label="Configure API settings">
-          ⚙️ Settings
-        </button>
-        
-        <div id="settingsPanel" class="settings-panel hidden">
+      <!-- Settings panel overlay -->
+      <div id="settingsPanel" class="settings-panel-overlay hidden">
+        <div class="settings-panel-content">
+          <div class="settings-panel-header">
+            <h3>Settings</h3>
+            <button id="closeSettingsBtn" class="close-settings-btn" aria-label="Close settings">✕</button>
+          </div>
+          
           <label for="apiKey">Google Gemini API Key:</label>
           <input 
             type="password" 
