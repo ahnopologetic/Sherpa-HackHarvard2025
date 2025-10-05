@@ -469,17 +469,50 @@ function extractCurrentSectionContent() {
   // Look for headings and their associated content
   const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
   
+  // First, try to find the heading that's closest to the top of the viewport
+  let bestHeading = null;
+  let bestDistance = Infinity;
+  
   for (let i = 0; i < headings.length; i++) {
     const heading = headings[i];
     const rect = heading.getBoundingClientRect();
     const headingTop = rect.top + scrollY;
     
-    // Check if this heading is near the center of the viewport
-    if (headingTop <= centerY && headingTop > scrollY - 100) {
-      currentSection = heading.textContent.trim();
-      currentSectionElement = heading;
-      console.log(`[Sherpa] Found current section: "${currentSection}"`);
-      break;
+    // Skip headings that are too far above the viewport
+    if (headingTop < scrollY - 200) continue;
+    
+    // Skip headings that are too far below the viewport
+    if (headingTop > scrollY + viewportHeight + 200) continue;
+    
+    // Calculate distance from top of viewport
+    const distance = Math.abs(headingTop - scrollY);
+    
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestHeading = heading;
+    }
+  }
+  
+  if (bestHeading) {
+    currentSection = bestHeading.textContent.trim();
+    currentSectionElement = bestHeading;
+    console.log(`[Sherpa] Found best section: "${currentSection}" (distance: ${bestDistance})`);
+  }
+  
+  // If no good heading found, try the center-based approach
+  if (!currentSectionElement) {
+    for (let i = 0; i < headings.length; i++) {
+      const heading = headings[i];
+      const rect = heading.getBoundingClientRect();
+      const headingTop = rect.top + scrollY;
+      
+      // Check if this heading is near the center of the viewport
+      if (headingTop <= centerY && headingTop > scrollY - 100) {
+        currentSection = heading.textContent.trim();
+        currentSectionElement = heading;
+        console.log(`[Sherpa] Found center-based section: "${currentSection}"`);
+        break;
+      }
     }
   }
   
@@ -516,36 +549,61 @@ function extractCurrentSectionContent() {
 function extractSectionText(element) {
   let text = '';
   
-  // Get all text nodes and elements within the section
-  const walker = document.createTreeWalker(
-    element,
-    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-    {
-      acceptNode: function(node) {
-        // Skip script, style, and other non-content elements
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          const tagName = node.tagName.toLowerCase();
-          if (['script', 'style', 'nav', 'footer', 'header', 'aside'].includes(tagName)) {
-            return NodeFilter.FILTER_REJECT;
-          }
+  // If it's a heading element, we need to get the content that follows it
+  if (element.tagName && element.tagName.match(/^H[1-6]$/)) {
+    // For headings, get the content that follows until the next heading of same or higher level
+    const headingLevel = parseInt(element.tagName.charAt(1));
+    let currentElement = element.nextElementSibling;
+    
+    while (currentElement) {
+      // Stop if we hit another heading of same or higher level
+      if (currentElement.tagName && currentElement.tagName.match(/^H[1-6]$/)) {
+        const currentLevel = parseInt(currentElement.tagName.charAt(1));
+        if (currentLevel <= headingLevel) {
+          break;
         }
-        return NodeFilter.FILTER_ACCEPT;
       }
+      
+      // Extract text from this element
+      const elementText = currentElement.textContent.trim();
+      if (elementText && elementText.length > 2) {
+        text += elementText + '\n';
+      }
+      
+      currentElement = currentElement.nextElementSibling;
     }
-  );
-  
-  let node;
-  while (node = walker.nextNode()) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const textContent = node.textContent.trim();
-      if (textContent && textContent.length > 2) {
-        text += textContent + ' ';
+  } else {
+    // For non-heading elements, extract all text content
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: function(node) {
+          // Skip script, style, and other non-content elements
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            const tagName = node.tagName.toLowerCase();
+            if (['script', 'style', 'nav', 'footer', 'header', 'aside'].includes(tagName)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
       }
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const tagName = node.tagName.toLowerCase();
-      // Add line breaks for block elements
-      if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].includes(tagName)) {
-        text += '\n';
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textContent = node.textContent.trim();
+        if (textContent && textContent.length > 2) {
+          text += textContent + ' ';
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = node.tagName.toLowerCase();
+        // Add line breaks for block elements
+        if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].includes(tagName)) {
+          text += '\n';
+        }
       }
     }
   }
@@ -556,6 +614,7 @@ function extractSectionText(element) {
     .replace(/\n\s*\n/g, '\n')  // Replace multiple newlines with single newline
     .trim();
 }
+
 // Add message listener to also send page structure for backend session
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.command === 'get_page_for_backend') {
