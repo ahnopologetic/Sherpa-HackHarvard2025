@@ -42,7 +42,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["permission.html", "offscreen.html"],
+      "resources": [
+        "permission.html", 
+        "offscreen.html", 
+        "assets/viscous-liquid-fall-in-83980.mp3",
+        "assets/notification-291227.mp3"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

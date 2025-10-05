@@ -26,6 +26,148 @@ let analyzeTimeoutId = null;
 let currentSessionId = null;
 let pageStructureData = null;
 let isRecording = false;
+let pendingAutoSummary = null; // Store summary that needs to be played when popup opens
+
+// ---- Audio ----
+let loadingSound = null;
+let loadingSoundInterval = null;
+let notificationSound = null;
+
+function initLoadingSound() {
+  if (!loadingSound) {
+    loadingSound = new Audio('assets/viscous-liquid-fall-in-83980.mp3');
+    loadingSound.loop = false; // Don't use native loop, we'll use setInterval
+  }
+}
+
+function initNotificationSound() {
+  if (!notificationSound) {
+    notificationSound = new Audio('assets/notification-291227.mp3');
+    notificationSound.loop = false;
+  }
+}
+
+function playNotificationSound() {
+  try {
+    initNotificationSound();
+    notificationSound.currentTime = 0;
+    notificationSound.play().catch(err => {
+      console.log('Could not play notification sound:', err);
+    });
+  } catch (error) {
+    console.log('Error initializing notification sound:', error);
+  }
+}
+
+function playLoadingSound() {
+  try {
+    initLoadingSound();
+    
+    // Play immediately first time
+    loadingSound.currentTime = 0;
+    loadingSound.play().catch(err => {
+      console.log('Could not play loading sound:', err);
+    });
+    
+    // Then repeat every 5 seconds
+    if (loadingSoundInterval) {
+      clearInterval(loadingSoundInterval);
+    }
+    
+    loadingSoundInterval = setInterval(() => {
+      loadingSound.currentTime = 0; // Reset to start
+      loadingSound.play().catch(err => {
+        console.log('Could not play loading sound:', err);
+      });
+    }, 5000); // 5 seconds
+    
+  } catch (error) {
+    console.log('Error initializing loading sound:', error);
+  }
+}
+
+function stopLoadingSound() {
+  // Clear the interval
+  if (loadingSoundInterval) {
+    clearInterval(loadingSoundInterval);
+    loadingSoundInterval = null;
+  }
+  
+  // Stop the audio
+  if (loadingSound) {
+    loadingSound.pause();
+    loadingSound.currentTime = 0;
+  }
+}
+
+// ---- Accessibility Helper Functions ----
+function announceToScreenReader(message, priority = 'polite') {
+  const announcer = document.getElementById('srAnnouncements');
+  if (!announcer) return;
+  
+  // Clear previous announcement
+  announcer.textContent = '';
+  
+  // Set new announcement with slight delay to ensure it's picked up
+  setTimeout(() => {
+    announcer.textContent = message;
+    announcer.setAttribute('aria-live', priority);
+  }, 100);
+  
+  // Clear after 3 seconds
+  setTimeout(() => {
+    announcer.textContent = '';
+  }, 3000);
+}
+
+function setAriaLabelForButton(button, label) {
+  if (button) {
+    button.setAttribute('aria-label', label);
+  }
+}
+
+function setAriaDisabled(element, disabled) {
+  if (element) {
+    element.setAttribute('aria-disabled', disabled.toString());
+    if (disabled) {
+      element.disabled = true;
+    } else {
+      element.disabled = false;
+    }
+  }
+}
+
+function manageFocusTrap(element, isActive) {
+  if (!element) return;
+  
+  const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const focusableElements = element.querySelectorAll(focusableSelectors);
+  
+  if (isActive && focusableElements.length > 0) {
+    // Focus first element when opening
+    focusableElements[0].focus();
+    
+    // Trap focus within element
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    
+    element.addEventListener('keydown', function trapFocus(e) {
+      if (e.key !== 'Tab') return;
+      
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          lastElement.focus();
+          e.preventDefault();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          firstElement.focus();
+          e.preventDefault();
+        }
+      }
+    });
+  }
+}
 
 // ---- Microphone Permission Handling ----
 async function checkMicrophonePermission() {
@@ -64,11 +206,16 @@ function updateRecordButtonState() {
   if (!recordBtn) return;
 
   if (isRecording) {
-    recordBtn.textContent = '⏹️ Stop Recording';
+    recordBtn.innerHTML = '<span aria-hidden="true">⏹️</span> Stop Recording';
+    recordBtn.setAttribute('aria-label', 'Stop audio recording');
+    recordBtn.setAttribute('aria-pressed', 'true');
     recordBtn.classList.add('recording');
     recordBtn.style.background = '#ef4444';
+    announceToScreenReader('Recording started. Speak your navigation command.', 'assertive');
   } else {
-    recordBtn.textContent = '🎤 Record Audio';
+    recordBtn.innerHTML = '<span aria-hidden="true">🎤</span> Record Audio';
+    recordBtn.setAttribute('aria-label', 'Record audio navigation command');
+    recordBtn.setAttribute('aria-pressed', 'false');
     recordBtn.classList.remove('recording');
     recordBtn.style.background = '';
   }
@@ -148,6 +295,9 @@ function ensureSummaryUI() {
 
   summarySection = document.createElement('section');
   summarySection.id = 'summarySection';
+  summarySection.setAttribute('role', 'region');
+  summarySection.setAttribute('aria-labelledby', 'summaryTitle');
+  summarySection.setAttribute('aria-live', 'polite');
   summarySection.style.marginTop = '12px';
   summarySection.style.background = 'rgba(255, 255, 255, 0.18)';
   summarySection.style.borderRadius = '8px';
@@ -161,19 +311,24 @@ function ensureSummaryUI() {
   header.style.marginBottom = '8px';
 
   const title = document.createElement('h2');
+  title.id = 'summaryTitle';
   title.textContent = 'Summary';
   title.style.fontSize = '16px';
   title.style.fontWeight = '700';
   header.appendChild(title);
 
   const meta = document.createElement('div');
+  meta.setAttribute('role', 'complementary');
+  meta.setAttribute('aria-label', 'Summary metadata');
   meta.style.fontSize = '12px';
   meta.style.opacity = '0.9';
   meta.style.display = 'flex';
   meta.style.gap = '8px';
 
   summarySource = document.createElement('span');
+  summarySource.setAttribute('aria-label', 'Analysis source');
   summaryModel = document.createElement('span');
+  summaryModel.setAttribute('aria-label', 'AI model used');
   meta.appendChild(summarySource);
   meta.appendChild(summaryModel);
   header.appendChild(meta);
@@ -182,7 +337,8 @@ function ensureSummaryUI() {
   summaryText.id = 'summaryText';
   summaryText.rows = 7;
   summaryText.readOnly = true;
-  summaryText.ariaLabel = 'AI generated summary';
+  summaryText.setAttribute('aria-label', 'AI generated page summary');
+  summaryText.setAttribute('aria-describedby', 'summaryHelp');
   summaryText.style.width = '100%';
   summaryText.style.resize = 'vertical';
   summaryText.style.border = '1px solid rgba(255,255,255,0.3)';
@@ -195,13 +351,107 @@ function ensureSummaryUI() {
   summaryText.style.fontFamily =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
+  const helpText = document.createElement('span');
+  helpText.id = 'summaryHelp';
+  helpText.className = 'visually-hidden';
+  helpText.textContent = 'This is the AI-generated summary of the current page structure. Use text-to-speech controls to listen or copy button to save the content.';
+
   const actions = document.createElement('div');
+  actions.setAttribute('role', 'toolbar');
+  actions.setAttribute('aria-label', 'Summary actions');
   actions.style.display = 'flex';
   actions.style.justifyContent = 'flex-end';
   actions.style.marginTop = '8px';
+  actions.style.gap = '8px';
 
+  // TTS Control buttons container
+  const ttsControls = document.createElement('div');
+  ttsControls.setAttribute('role', 'group');
+  ttsControls.setAttribute('aria-label', 'Text-to-speech controls');
+  ttsControls.style.display = 'flex';
+  ttsControls.style.gap = '8px';
+
+  // Play button
+  playBtn = document.createElement('button');
+  playBtn.innerHTML = '<span aria-hidden="true">▶️</span>';
+  playBtn.setAttribute('aria-label', 'Play summary using text-to-speech');
+  playBtn.title = 'Play summary';
+  playBtn.style.background = 'white';
+  playBtn.style.color = '#1f2937';
+  playBtn.style.border = 'none';
+  playBtn.style.padding = '8px 12px';
+  playBtn.style.fontSize = '16px';
+  playBtn.style.borderRadius = '6px';
+  playBtn.style.cursor = 'pointer';
+  playBtn.style.transition = 'all 0.2s ease';
+  playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  playBtn.addEventListener('click', () => playSummary());
+  playBtn.addEventListener('mouseenter', () => {
+    playBtn.style.transform = 'translateY(-1px)';
+    playBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  playBtn.addEventListener('mouseleave', () => {
+    playBtn.style.transform = 'translateY(0)';
+    playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  // Pause button
+  pauseBtn = document.createElement('button');
+  pauseBtn.innerHTML = '<span aria-hidden="true">⏸️</span>';
+  pauseBtn.setAttribute('aria-label', 'Pause text-to-speech playback');
+  pauseBtn.title = 'Pause summary';
+  pauseBtn.style.background = 'white';
+  pauseBtn.style.color = '#1f2937';
+  pauseBtn.style.border = 'none';
+  pauseBtn.style.padding = '8px 12px';
+  pauseBtn.style.fontSize = '16px';
+  pauseBtn.style.borderRadius = '6px';
+  pauseBtn.style.cursor = 'pointer';
+  pauseBtn.style.transition = 'all 0.2s ease';
+  pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  pauseBtn.style.display = 'none'; // Hidden by default
+  pauseBtn.addEventListener('click', () => pauseSummary());
+  pauseBtn.addEventListener('mouseenter', () => {
+    pauseBtn.style.transform = 'translateY(-1px)';
+    pauseBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  pauseBtn.addEventListener('mouseleave', () => {
+    pauseBtn.style.transform = 'translateY(0)';
+    pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  // Replay button
+  replayBtn = document.createElement('button');
+  replayBtn.innerHTML = '<span aria-hidden="true">🔄</span>';
+  replayBtn.setAttribute('aria-label', 'Replay summary from the beginning');
+  replayBtn.title = 'Replay summary';
+  replayBtn.style.background = 'white';
+  replayBtn.style.color = '#1f2937';
+  replayBtn.style.border = 'none';
+  replayBtn.style.padding = '8px 12px';
+  replayBtn.style.fontSize = '16px';
+  replayBtn.style.borderRadius = '6px';
+  replayBtn.style.cursor = 'pointer';
+  replayBtn.style.transition = 'all 0.2s ease';
+  replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  replayBtn.addEventListener('click', () => replaySummary());
+  replayBtn.addEventListener('mouseenter', () => {
+    replayBtn.style.transform = 'translateY(-1px)';
+    replayBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  replayBtn.addEventListener('mouseleave', () => {
+    replayBtn.style.transform = 'translateY(0)';
+    replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  ttsControls.appendChild(playBtn);
+  ttsControls.appendChild(pauseBtn);
+  ttsControls.appendChild(replayBtn);
+
+  // Copy button
   copySummaryBtn = document.createElement('button');
   copySummaryBtn.textContent = 'Copy';
+  copySummaryBtn.setAttribute('aria-label', 'Copy summary text to clipboard');
   copySummaryBtn.style.background = 'white';
   copySummaryBtn.style.color = '#1f2937';
   copySummaryBtn.style.border = 'none';
@@ -214,16 +464,27 @@ function ensureSummaryUI() {
     try {
       await navigator.clipboard.writeText(summaryText.value || '');
       copySummaryBtn.textContent = 'Copied!';
-      setTimeout(() => (copySummaryBtn.textContent = 'Copy'), 1200);
+      copySummaryBtn.setAttribute('aria-label', 'Summary copied to clipboard');
+      announceToScreenReader('Summary copied to clipboard', 'assertive');
+      setTimeout(() => {
+        copySummaryBtn.textContent = 'Copy';
+        copySummaryBtn.setAttribute('aria-label', 'Copy summary text to clipboard');
+      }, 1200);
     } catch {
       copySummaryBtn.textContent = 'Copy failed';
-      setTimeout(() => (copySummaryBtn.textContent = 'Copy'), 1200);
+      copySummaryBtn.setAttribute('aria-label', 'Failed to copy summary');
+      announceToScreenReader('Failed to copy summary', 'assertive');
+      setTimeout(() => {
+        copySummaryBtn.textContent = 'Copy';
+        copySummaryBtn.setAttribute('aria-label', 'Copy summary text to clipboard');
+      }, 1200);
     }
   });
 
   actions.appendChild(copySummaryBtn);
 
   summarySection.appendChild(header);
+  summarySection.appendChild(helpText);
   summarySection.appendChild(summaryText);
   summarySection.appendChild(actions);
 
@@ -240,6 +501,8 @@ function ensureVoiceUI() {
 
   voiceSection = document.createElement('section');
   voiceSection.id = 'voiceSection';
+  voiceSection.setAttribute('role', 'region');
+  voiceSection.setAttribute('aria-labelledby', 'voiceCommandTitle');
   voiceSection.style.marginTop = '12px';
   voiceSection.style.background = 'rgba(255, 255, 255, 0.18)';
   voiceSection.style.borderRadius = '8px';
@@ -250,6 +513,7 @@ function ensureVoiceUI() {
   header.style.marginBottom = '8px';
 
   const title = document.createElement('h2');
+  title.id = 'voiceCommandTitle';
   title.textContent = 'Navigation Command';
   title.style.fontSize = '16px';
   title.style.fontWeight = '700';
@@ -258,12 +522,15 @@ function ensureVoiceUI() {
   // Quick Navigation Suggestions
   quickNavContainer = document.createElement('div');
   quickNavContainer.id = 'quickNavContainer';
+  quickNavContainer.setAttribute('role', 'navigation');
+  quickNavContainer.setAttribute('aria-label', 'Quick navigation suggestions');
   quickNavContainer.style.marginTop = '12px';
   quickNavContainer.style.marginBottom = '12px';
   quickNavContainer.style.display = 'none'; // Hidden until we have suggestions
 
   const quickNavTitle = document.createElement('div');
   quickNavTitle.textContent = '✨ Quick Navigation:';
+  quickNavTitle.setAttribute('aria-hidden', 'true');
   quickNavTitle.style.fontSize = '13px';
   quickNavTitle.style.fontWeight = '600';
   quickNavTitle.style.marginBottom = '8px';
@@ -273,6 +540,7 @@ function ensureVoiceUI() {
 
   const suggestionsContainer = document.createElement('div');
   suggestionsContainer.id = 'suggestionsContainer';
+  suggestionsContainer.setAttribute('role', 'list');
   suggestionsContainer.style.display = 'flex';
   suggestionsContainer.style.flexWrap = 'wrap';
   suggestionsContainer.style.gap = '6px';
@@ -281,6 +549,8 @@ function ensureVoiceUI() {
   // Text input for commands
   textInput = document.createElement('input');
   textInput.type = 'text';
+  textInput.setAttribute('aria-label', 'Enter navigation command');
+  textInput.setAttribute('aria-describedby', 'commandInputHelp');
   textInput.placeholder = 'Type your command here (e.g., "go to navigation", "scroll to footer")';
   textInput.style.width = '100%';
   textInput.style.padding = '8px';
@@ -289,6 +559,11 @@ function ensureVoiceUI() {
   textInput.style.marginBottom = '8px';
   textInput.style.fontSize = '14px';
   textInput.style.boxSizing = 'border-box';
+
+  const inputHelp = document.createElement('span');
+  inputHelp.id = 'commandInputHelp';
+  inputHelp.className = 'visually-hidden';
+  inputHelp.textContent = 'Enter a navigation command like go to navigation, scroll to footer, or press enter to submit';
 
   // Button container for side-by-side layout
   const buttonContainer = document.createElement('div');
@@ -302,9 +577,22 @@ function ensureVoiceUI() {
   // Record button
   recordBtn = document.createElement('button');
   recordBtn.id = 'recordBtn';
-  recordBtn.textContent = '🎤 Record Audio';
-  recordBtn.className = 'primary-button flex-button';
-  recordBtn.setAttribute('aria-label', 'Record audio');
+  recordBtn.innerHTML = '<span aria-hidden="true">🎤</span> Record Audio';
+  recordBtn.className = 'primary-button';
+  recordBtn.setAttribute('aria-label', 'Record audio navigation command');
+  recordBtn.setAttribute('aria-pressed', 'false');
+  recordBtn.style.flex = '1';
+  recordBtn.style.maxWidth = '156px';
+  recordBtn.style.padding = '14px 24px';
+  recordBtn.style.background = 'white';
+  recordBtn.style.color = '#667eea';
+  recordBtn.style.border = 'none';
+  recordBtn.style.borderRadius = '8px';
+  recordBtn.style.cursor = 'pointer';
+  recordBtn.style.fontWeight = '700';
+  recordBtn.style.fontSize = '16px';
+  recordBtn.style.transition = 'all 0.2s ease';
+  recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   recordBtn.style.textTransform = 'uppercase';
   recordBtn.style.letterSpacing = '0.5px';
 
@@ -352,7 +640,19 @@ function ensureVoiceUI() {
   // Submit button (prominent primary action)
   submitBtn = document.createElement('button');
   submitBtn.textContent = 'Submit Command';
-  submitBtn.className = 'primary-button flex-button';
+  submitBtn.setAttribute('aria-label', 'Submit navigation command');
+  submitBtn.style.flex = '1';
+  submitBtn.style.maxWidth = '156px';
+  submitBtn.style.padding = '14px 24px';
+  submitBtn.style.background = 'white';
+  submitBtn.style.color = '#667eea';
+  submitBtn.style.border = 'none';
+  submitBtn.style.borderRadius = '8px';
+  submitBtn.style.cursor = 'pointer';
+  submitBtn.style.fontWeight = '700';
+  submitBtn.style.fontSize = '16px';
+  submitBtn.style.transition = 'all 0.2s ease';
+  submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   submitBtn.style.textTransform = 'uppercase';
   submitBtn.style.letterSpacing = '0.5px';
 
@@ -368,6 +668,9 @@ function ensureVoiceUI() {
 
   voiceDisplay = document.createElement('div');
   voiceDisplay.id = 'voiceDisplay';
+  voiceDisplay.setAttribute('role', 'status');
+  voiceDisplay.setAttribute('aria-live', 'polite');
+  voiceDisplay.setAttribute('aria-atomic', 'true');
   voiceDisplay.style.minHeight = '60px';
   voiceDisplay.style.padding = '10px';
   voiceDisplay.style.background = 'rgba(255,255,255,0.9)';
@@ -397,6 +700,7 @@ function ensureVoiceUI() {
 
   voiceSection.appendChild(header);
   voiceSection.appendChild(quickNavContainer); // Add quick nav before input
+  voiceSection.appendChild(inputHelp);
   voiceSection.appendChild(textInput);
   voiceSection.appendChild(buttonContainer); // Add button container instead of individual buttons
   voiceSection.appendChild(voiceDisplay);
@@ -435,8 +739,12 @@ function populateNavigationSuggestions() {
 
   // Create suggestion buttons (inverted style - purple background)
   interestingSections.forEach(section => {
+    const listItem = document.createElement('div');
+    listItem.setAttribute('role', 'listitem');
+    
     const btn = document.createElement('button');
     btn.textContent = section.label;
+    btn.setAttribute('aria-label', `Navigate to ${section.label}`);
     btn.style.padding = '8px 16px';
     btn.style.background = '#667eea';
     btn.style.color = 'white';
@@ -467,14 +775,17 @@ function populateNavigationSuggestions() {
     // Click to navigate
     btn.addEventListener('click', async () => {
       textInput.value = `go to ${section.label}`;
+      announceToScreenReader(`Navigating to ${section.label}`, 'polite');
       await handleCommand();
     });
 
-    suggestionsContainer.appendChild(btn);
+    listItem.appendChild(btn);
+    suggestionsContainer.appendChild(listItem);
   });
 
   // Show the container
   quickNavContainer.style.display = 'block';
+  announceToScreenReader(`${interestingSections.length} quick navigation shortcuts available`, 'polite');
 }
 
 // ---- Backend Integration Functions ----
@@ -862,6 +1173,7 @@ async function handleCommand() {
   }
 
   submitBtn.disabled = true;
+  showVoiceCommandLoading(); // Show loading spinner and play sound
   voiceDisplay.textContent = `🔄 Processing: "${command}"...`;
 
   try {
@@ -878,6 +1190,8 @@ async function handleCommand() {
     voiceDisplay.textContent = `❌ Error: ${error.message}`;
   } finally {
     submitBtn.disabled = false;
+    hideAllIndicators(); // Hide loading spinner
+    stopLoadingSound(); // Stop loading sound
   }
 }
 
@@ -892,26 +1206,57 @@ function showLoading() {
   hideAllIndicators();
   loadingIndicator && loadingIndicator.classList.remove('hidden');
   buttonText && (buttonText.textContent = 'Analyzing…');
-  analyzeBtn && (analyzeBtn.disabled = true);
+  if (analyzeBtn) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.setAttribute('aria-busy', 'true');
+    analyzeBtn.setAttribute('aria-disabled', 'true');
+  }
+  playLoadingSound(); // Play sound effect during loading
+  announceToScreenReader('Analyzing page structure. Please wait.', 'polite');
+}
+
+function showVoiceCommandLoading() {
+  hideAllIndicators();
+  loadingIndicator && loadingIndicator.classList.remove('hidden');
+  playLoadingSound(); // Play sound effect during voice command processing
 }
 
 function showSpeaking() {
   buttonText && (buttonText.textContent = 'Speaking…');
 }
 
-function showSuccess() {
+function showSuccess(skipNotificationSound = false) {
   hideAllIndicators();
+  stopLoadingSound(); // Stop sound when loading completes
+  
+  // Only play notification sound if not skipped (for auto-triggered analysis)
+  if (!skipNotificationSound) {
+    playNotificationSound(); // Play notification sound on completion
+  }
+  
   successIndicator && successIndicator.classList.remove('hidden');
   buttonText && (buttonText.textContent = 'Analyze Page Structure');
-  analyzeBtn && (analyzeBtn.disabled = false);
+  if (analyzeBtn) {
+    analyzeBtn.disabled = false;
+    analyzeBtn.removeAttribute('aria-busy');
+    analyzeBtn.setAttribute('aria-disabled', 'false');
+  }
+  announceToScreenReader('Analysis complete! Summary and navigation options are now available.', 'assertive');
 }
 
 function showError(msg) {
   hideAllIndicators();
+  stopLoadingSound(); // Stop sound when loading fails
   errorIndicator && errorIndicator.classList.remove('hidden');
-  if (errorMessage) errorMessage.textContent = msg || 'Analysis failed';
+  const errorMsg = msg || 'Analysis failed';
+  if (errorMessage) errorMessage.textContent = errorMsg;
   buttonText && (buttonText.textContent = 'Analyze Page Structure');
-  analyzeBtn && (analyzeBtn.disabled = false);
+  if (analyzeBtn) {
+    analyzeBtn.disabled = false;
+    analyzeBtn.removeAttribute('aria-busy');
+    analyzeBtn.setAttribute('aria-disabled', 'false');
+  }
+  announceToScreenReader(`Error: ${errorMsg}`, 'assertive');
 }
 
 function clearAnalyzeTimeout() {
@@ -959,6 +1304,8 @@ chrome.runtime.onMessage.addListener(async (message) => {
   if (message.target === 'popup') {
     switch (message.type) {
       case 'recording-error':
+        hideAllIndicators(); // Hide loading spinner if active
+        stopLoadingSound(); // Stop loading sound if playing
         alert(message.error);
         isRecording = false;
         updateRecordButtonState();
@@ -966,6 +1313,7 @@ chrome.runtime.onMessage.addListener(async (message) => {
       case 'recording-stopped':
         isRecording = false;
         updateRecordButtonState();
+        showVoiceCommandLoading(); // Show loading spinner and play sound
         if (voiceDisplay) {
           voiceDisplay.textContent = '🎤 Recording stopped. Processing audio...';
         }
@@ -991,9 +1339,14 @@ chrome.runtime.onMessage.addListener(async (message) => {
           if (voiceDisplay) {
             voiceDisplay.textContent = `❌ Error processing voice command: ${error.message}`;
           }
+        } finally {
+          hideAllIndicators(); // Hide loading spinner
+          stopLoadingSound(); // Stop loading sound
         }
         break;
       case 'voice-interpretation-error':
+        hideAllIndicators(); // Hide loading spinner
+        stopLoadingSound(); // Stop loading sound
         if (voiceDisplay) {
           voiceDisplay.textContent = `❌ Voice interpretation error: ${message.error}`;
         } else {
@@ -1031,7 +1384,9 @@ chrome.runtime.onMessage.addListener(async (message) => {
   if (message.type === 'analysis_complete') {
     isAnalyzing = false;
     clearAnalyzeTimeout();
-    showSuccess();
+    
+    // Skip notification sound in showSuccess if auto-triggered (background already played it)
+    showSuccess(message.autoTriggered);
 
     ensureSummaryUI();
     summaryText.value = message.summary || '';
@@ -1048,6 +1403,30 @@ chrome.runtime.onMessage.addListener(async (message) => {
       pageStructureData = message.pageStructure;
     }
 
+    // If this was auto-triggered and popup is visible, play TTS immediately
+    if (message.autoTriggered) {
+      // Popup is already open, so play TTS now
+      if (currentSummary && message.langHint) {
+        console.log('[Sherpa] Playing TTS for auto-analysis (popup is open)');
+        chrome.runtime.sendMessage({
+          type: 'speak_text',
+          text: currentSummary,
+          langHint: message.langHint
+        }).catch(err => {
+          console.error('TTS error:', err);
+        });
+      }
+      // Clear any pending summary since we just played it
+      pendingAutoSummary = null;
+    }
+
+    return;
+  }
+
+  // Handle auto-analysis notification
+  if (message.type === 'auto_analysis_triggered') {
+    console.log('[Sherpa] Auto-analysis triggered for:', message.url);
+    announceToScreenReader('Page analysis started automatically', 'polite');
     return;
   }
 
@@ -1074,6 +1453,7 @@ saveApiKeyBtn?.addEventListener('click', async () => {
   if (!apiKey) {
     apiKeyStatus.textContent = 'Please enter a valid API key';
     apiKeyStatus.className = 'api-key-status error';
+    announceToScreenReader('Please enter a valid API key', 'assertive');
     return;
   }
 
@@ -1082,14 +1462,18 @@ saveApiKeyBtn?.addEventListener('click', async () => {
     apiKeyStatus.textContent = '✓ API key saved';
     apiKeyStatus.className = 'api-key-status success';
     apiKeyInput.value = '';
+    announceToScreenReader('API key saved successfully', 'assertive');
 
     // Auto-close settings after 1 second
     setTimeout(() => {
       settingsPanel?.classList.add('hidden');
+      // Return focus to settings button
+      settingsBtn?.focus();
     }, 1000);
   } catch {
     apiKeyStatus.textContent = 'Failed to save API key';
     apiKeyStatus.className = 'api-key-status error';
+    announceToScreenReader('Failed to save API key', 'assertive');
   }
 });
 
@@ -1155,6 +1539,8 @@ function stopFeatureRotator() {
       return;
     }
     settingsPanel.classList.remove('hidden');
+    manageFocusTrap(settingsPanel, true);
+    announceToScreenReader('Settings dialog opened', 'polite');
   });
 
   // Close settings button
@@ -1164,6 +1550,8 @@ function stopFeatureRotator() {
       e.stopPropagation(); // Prevent event bubbling
       if (settingsPanel) {
         settingsPanel.classList.add('hidden');
+        settingsBtn?.focus(); // Return focus to settings button
+        announceToScreenReader('Settings dialog closed', 'polite');
       }
     });
   } else {
@@ -1174,6 +1562,17 @@ function stopFeatureRotator() {
   settingsPanel?.addEventListener('click', (e) => {
     if (e.target === settingsPanel) {
       settingsPanel.classList.add('hidden');
+      settingsBtn?.focus(); // Return focus to settings button
+      announceToScreenReader('Settings dialog closed', 'polite');
+    }
+  });
+
+  // Handle Escape key to close settings
+  settingsPanel?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      settingsPanel.classList.add('hidden');
+      settingsBtn?.focus();
+      announceToScreenReader('Settings dialog closed', 'polite');
     }
   });
 })();

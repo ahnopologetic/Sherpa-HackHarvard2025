@@ -168,7 +168,9 @@ async function requestPageForBackend(tabId) {
 }
 
 // ===== Core workflow =====
-async function handlePageAnalysis(pageStructure) {
+async function handlePageAnalysis(pageStructure, options = {}) {
+  const { autoTriggered = false } = options;
+  
   notifyPopup('loading', 'Preparing summary…');
 
   try {
@@ -212,14 +214,38 @@ async function handlePageAnalysis(pageStructure) {
       summary,
       source: usedSource || (apiKey ? 'cloud' : 'built-in'),
       model: GEMINI_MODEL,
-      pageStructure: pageStructure // Send page structure too
+      pageStructure: pageStructure, // Send page structure too
+      autoTriggered: autoTriggered, // Flag to indicate if auto-triggered
+      langHint: pageStructure?.language || pageStructure?.lang || null
     }).catch(() => { });
 
-    // Then speak, updating status along the way
-    notifyPopup('speaking', 'Speaking summary…');
-    const langHint = pageStructure?.language || pageStructure?.lang || null;
-    await speakText(summary, langHint);
+    // Only speak TTS if NOT auto-triggered (i.e., user manually clicked analyze)
+    if (!autoTriggered) {
+      // Then speak, updating status along the way
+      notifyPopup('speaking', 'Speaking summary…');
+      
+      // Notify popup that TTS started
+      chrome.runtime.sendMessage({ type: 'tts_started' }).catch(() => { });
+      
+      const langHint = pageStructure?.language || pageStructure?.lang || null;
+      await speakText(summary, langHint);
 
+      // Notify popup that TTS ended
+      chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+    } else {
+      // If auto-triggered, play notification sound via content script
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs[0]) {
+        try {
+          await chrome.tabs.sendMessage(tabs[0].id, { 
+            command: 'play_notification_sound' 
+          });
+        } catch (err) {
+          console.log('[Sherpa] Could not play notification sound:', err);
+        }
+      }
+    }
+    
     notifyPopup('complete');
 
 
@@ -236,7 +262,12 @@ async function handlePageAnalysis(pageStructure) {
     }
 
     notifyPopup('error', error.message);
-    await speakText(audible).catch(() => { });
+    
+    // Only speak error if not auto-triggered
+    if (!autoTriggered) {
+      await speakText(audible).catch(() => { });
+    }
+    
     chrome.runtime.sendMessage({ type: 'analysis_error', error: error.message }).catch(() => { });
     throw error;
   }
@@ -311,6 +342,81 @@ chrome.runtime.onMessage.addListener(async (message, _sender, sendResponse) => {
             : "icons/not-recording.png",
         });
         break;
+    }
+  }
+});
+
+// ===== Auto-analyze for Wikipedia and NYTimes =====
+const AUTO_ANALYZE_DOMAINS = [
+  'wikipedia.org',
+  'nytimes.com'
+];
+
+function shouldAutoAnalyze(url) {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return AUTO_ANALYZE_DOMAINS.some(domain => hostname.includes(domain));
+  } catch {
+    return false;
+  }
+}
+
+// Track processed tabs to avoid duplicate analysis
+const processedTabs = new Map();
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Only trigger on complete page load
+  if (changeInfo.status !== 'complete') return;
+  
+  // Check if this is a target domain
+  if (!shouldAutoAnalyze(tab.url)) return;
+  
+  // Avoid duplicate processing for the same page
+  const tabKey = `${tabId}-${tab.url}`;
+  if (processedTabs.has(tabKey)) return;
+  processedTabs.set(tabKey, Date.now());
+  
+  // Clean up old entries (older than 5 minutes)
+  const now = Date.now();
+  for (const [key, timestamp] of processedTabs.entries()) {
+    if (now - timestamp > 300000) {
+      processedTabs.delete(key);
+    }
+  }
+  
+  console.log('[Sherpa] Auto-analyzing page:', tab.url);
+  
+  // Wait a bit for the page to fully render
+  setTimeout(async () => {
+    try {
+      // Request page structure from content script
+      const response = await chrome.tabs.sendMessage(tabId, { 
+        command: 'get_page_for_backend' 
+      });
+      
+      if (response && response.ok && response.data) {
+        // Trigger analysis with autoTriggered flag
+        await handlePageAnalysis(response.data, { autoTriggered: true });
+        
+        // Notify popup that auto-analysis was triggered
+        chrome.runtime.sendMessage({ 
+          type: 'auto_analysis_triggered',
+          url: tab.url 
+        }).catch(() => {});
+      }
+    } catch (error) {
+      console.log('[Sherpa] Auto-analysis failed:', error.message);
+    }
+  }, 1500); // Wait 1.5 seconds for page to stabilize
+});
+
+// Clean up processed tabs when tabs are closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  // Remove all entries for this tab
+  for (const [key] of processedTabs.entries()) {
+    if (key.startsWith(`${tabId}-`)) {
+      processedTabs.delete(key);
     }
   }
 });
