@@ -1733,6 +1733,17 @@ function stopFeatureRotator() {
   }
 }
 
+// ---- Stop TTS when popup closes ----
+window.addEventListener('beforeunload', () => {
+  console.log('[Sherpa] Popup closing - stopping TTS');
+  chrome.runtime.sendMessage({ type: 'stop_tts' }).catch(() => {});
+});
+
+window.addEventListener('unload', () => {
+  console.log('[Sherpa] Popup unloaded - stopping TTS');
+  chrome.runtime.sendMessage({ type: 'stop_tts' }).catch(() => {});
+});
+
 // ---- Init ----
 (async function init() {
   hideAllIndicators();
