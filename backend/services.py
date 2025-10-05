@@ -3,6 +3,7 @@ Business logic for Sherpa API
 """
 
 import logging
+from typing import Any, Dict, Optional
 
 import uuid
 from google import genai
@@ -10,7 +11,6 @@ from google.genai import types
 
 
 from datetime import datetime, timedelta
-from typing import Dict, Optional
 from models import CreateSessionRequest, CreateSessionResponse, InterpretResponse
 from config import settings
 
