@@ -112,3 +112,10 @@ class ImmersiveSummaryResponse(BaseModel):
     """Response model for immersive summary"""
 
     job_id: str = Field(..., description="Job ID for the immersive summary")
+
+
+class ImmersiveSummaryTranscriptResponse(BaseModel):
+    """Response model for immersive summary transcript"""
+
+    transcript: str = Field(..., description="Transcript of the immersive summary")
+    error: Optional[str] = Field(None, description="Error message if the job failed")

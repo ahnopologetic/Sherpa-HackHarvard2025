@@ -16,6 +16,7 @@ from models import (
     CreateSessionRequest,
     CreateSessionResponse,
     ImmersiveSummaryResponse,
+    ImmersiveSummaryTranscriptResponse,
     InterpretResponse,
 )
 from config import settings
@@ -289,10 +290,11 @@ class ImmersiveSummaryService:
         page_url: str,
         page_title: str,
         context: Optional[str] = None,
-    ) -> ImmersiveSummaryResponse:
+    ) -> ImmersiveSummaryTranscriptResponse:
         """
         Generate an immersive summary of the page.
         """
+        logger.info("Generating immersive summary transcript")
         client = genai.Client(
             api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
         )
@@ -355,7 +357,7 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
                     temperature=0.1,
                     top_k=10,
                     top_p=0.8,
-                    response_schema=ImmersiveSummaryResponse,
+                    response_schema=ImmersiveSummaryTranscriptResponse,
                     response_mime_type="application/json",
                 ),
             )
@@ -363,8 +365,9 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
             return response.parsed
         except Exception as e:
             logger.error(f"Immersive summary error: {e}")
-            return ImmersiveSummaryResponse(
-                summary=f"Sorry, I couldn't generate a summary: {str(e)}"
+            return ImmersiveSummaryTranscriptResponse(
+                transcript=f"Sorry, I couldn't generate a summary: {str(e)}",
+                error=str(e),
             )
 
     @staticmethod
@@ -414,16 +417,24 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
             "context": context,
             "status": "pending",
         }
-        transcript = (
-            await ImmersiveSummaryService.generate_immersive_summary_transcript(
-                page_url=page_url,
-                page_title=page_title,
-                context=context,
-            )
+        result = await ImmersiveSummaryService.generate_immersive_summary_transcript(
+            page_url=page_url,
+            page_title=page_title,
+            context=context,
         )
         await ImmersiveSummaryService.generate_immersive_summary_audio(
-            transcript=transcript,
+            transcript=result.transcript,
             output_filepath=f"{job_id}.wav",
         )
         jobs[job_id]["status"] = "completed"
         logger.info("Immersive summary audio job completed")
+
+    async def get_immersive_summary_audio(job_id: str) -> bytes:
+        """
+        Get the immersive summary audio.
+        """
+        # if job_id not in jobs:
+        #     raise ValueError("Job not found")
+        # if jobs[job_id]["status"] != "completed":
+        #     raise ValueError("Job not completed")
+        return open(f"{job_id}.wav", "rb").read()

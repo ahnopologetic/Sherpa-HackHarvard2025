@@ -3,6 +3,7 @@ Sherpa API - FastAPI application for voice-controlled web navigation
 """
 
 import logging
+import os
 import uuid
 
 from fastapi import (
@@ -17,6 +18,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
+
+from fastapi.responses import FileResponse
 
 from models import (
     CreateSessionRequest,
@@ -163,7 +166,6 @@ async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionRespon
 
 @app.post(
     "/v1/immersive-summary",
-    response_model=ImmersiveSummaryResponse,
     summary="Generate an immersive summary of the page",
     description="Generate an immersive summary of the page.",
 )
@@ -184,6 +186,24 @@ async def generate_immersive_summary(
     )
     return ImmersiveSummaryResponse(
         job_id=job_id,
+    )
+
+
+@app.get(
+    "/v1/immersive-summary/{job_id}",
+    summary="Get the immersive summary audio",
+    description="Get the immersive summary audio.",
+    response_class=FileResponse,
+)
+async def get_immersive_summary_audio(job_id: str):
+    """
+    Get the immersive summary audio as a WAV file.
+    """
+    file_path = f"{job_id}.wav"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        path=file_path, media_type="audio/wav", filename=f"{job_id}.wav"
     )
 
 
