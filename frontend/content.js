@@ -622,6 +622,549 @@ function extractSectionText(element) {
     .trim();
 }
 
+// ===== Immersive Summary Dock =====
+let sherpaDock = null;
+let dockAudio = null;
+let currentTranscript = '';
+let transcriptSegments = [];
+let currentSegmentIndex = 0;
+let isPlaying = false;
+
+function createSherpaDock() {
+  if (sherpaDock) {
+    return; // Already exists
+  }
+
+  // Create dock container
+  sherpaDock = document.createElement('div');
+  sherpaDock.id = 'sherpa-immersive-dock';
+  sherpaDock.innerHTML = `
+    <div class="sherpa-dock-content">
+      <!-- Music Player Controls -->
+      <div class="sherpa-player-section">
+        <button class="sherpa-control-btn" id="sherpa-play-pause" aria-label="Play/Pause">
+          <svg class="sherpa-play-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <svg class="sherpa-pause-icon" viewBox="0 0 24 24" fill="currentColor" style="display: none;">
+            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+          </svg>
+        </button>
+        
+        <button class="sherpa-control-btn" id="sherpa-skip-back" aria-label="Skip back 10 seconds">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/>
+          </svg>
+        </button>
+        
+        <button class="sherpa-control-btn" id="sherpa-skip-forward" aria-label="Skip forward 10 seconds">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
+          </svg>
+        </button>
+        
+        <!-- Progress Bar -->
+        <div class="sherpa-progress-container">
+          <div class="sherpa-progress-bar" id="sherpa-progress-bar">
+            <div class="sherpa-progress-fill" id="sherpa-progress-fill"></div>
+          </div>
+          <div class="sherpa-time-display">
+            <span id="sherpa-current-time">0:00</span> / <span id="sherpa-total-time">0:00</span>
+          </div>
+        </div>
+        
+        <!-- Volume Control -->
+        <div class="sherpa-volume-container">
+          <button class="sherpa-control-btn sherpa-volume-btn" id="sherpa-volume-btn" aria-label="Volume">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
+            </svg>
+          </button>
+          <input type="range" class="sherpa-volume-slider" id="sherpa-volume-slider" 
+                 min="0" max="100" value="80" aria-label="Volume slider">
+        </div>
+        
+        <button class="sherpa-control-btn sherpa-close-btn" id="sherpa-close-dock" aria-label="Close dock">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Separator -->
+      <div class="sherpa-separator"></div>
+      
+      <!-- Transcript Viewer -->
+      <div class="sherpa-transcript-section">
+        <div class="sherpa-transcript-header">
+          <span class="sherpa-transcript-title">📝 Live Transcript</span>
+          <span class="sherpa-transcript-hint">Keyboard: Space = Play/Pause, ← → = Seek, Esc = Close</span>
+        </div>
+        <div class="sherpa-transcript-viewer" id="sherpa-transcript-viewer">
+          <div class="sherpa-transcript-text" id="sherpa-transcript-text">
+            Loading transcript...
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Inject styles
+  const style = document.createElement('style');
+  style.textContent = `
+    #sherpa-immersive-dock {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 999999;
+      background: linear-gradient(135deg, rgba(20, 20, 30, 0.98), rgba(30, 30, 45, 0.98));
+      backdrop-filter: blur(20px);
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      padding: 20px 32px;
+      max-width: 1000px;
+      min-width: 800px;
+      animation: sherpa-dock-slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes sherpa-dock-slide-up {
+      from {
+        opacity: 0;
+        transform: translate(-50%, 20px);
+      }
+      to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+    }
+
+    .sherpa-dock-content {
+      display: flex;
+      gap: 24px;
+      align-items: center;
+    }
+
+    .sherpa-player-section {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .sherpa-control-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .sherpa-control-btn:hover {
+      transform: translateY(-2px) scale(1.05);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.6);
+    }
+
+    .sherpa-control-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+
+    .sherpa-control-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    #sherpa-play-pause {
+      width: 56px;
+      height: 56px;
+    }
+
+    #sherpa-play-pause svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .sherpa-close-btn {
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+    }
+
+    .sherpa-close-btn:hover {
+      background: rgba(255, 100, 100, 0.8);
+    }
+
+    .sherpa-volume-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sherpa-volume-btn {
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+    }
+
+    .sherpa-volume-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    .sherpa-volume-slider {
+      width: 80px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .sherpa-volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(102, 126, 234, 0.5);
+    }
+
+    .sherpa-volume-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 2px 6px rgba(102, 126, 234, 0.5);
+    }
+
+    .sherpa-progress-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 180px;
+    }
+
+    .sherpa-progress-bar {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .sherpa-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+
+    .sherpa-time-display {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    .sherpa-separator {
+      width: 2px;
+      height: 60px;
+      background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      flex-shrink: 0;
+    }
+
+    .sherpa-transcript-section {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sherpa-transcript-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .sherpa-transcript-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.9);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    .sherpa-transcript-hint {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    .sherpa-transcript-viewer {
+      max-height: 80px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+    }
+
+    .sherpa-transcript-viewer::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .sherpa-transcript-viewer::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .sherpa-transcript-viewer::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 3px;
+    }
+
+    .sherpa-transcript-text {
+      color: rgba(255, 255, 255, 0.9);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      letter-spacing: 0.3px;
+    }
+
+    .sherpa-transcript-word {
+      display: inline;
+      transition: all 0.2s ease;
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    .sherpa-transcript-word.active {
+      color: #ffffff;
+      font-weight: 600;
+      text-shadow: 0 0 20px rgba(102, 126, 234, 0.8);
+      animation: sherpa-word-glow 0.3s ease;
+    }
+
+    .sherpa-transcript-word.spoken {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    @keyframes sherpa-word-glow {
+      0% {
+        transform: scale(1);
+      }
+      50% {
+        transform: scale(1.05);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    @media (max-width: 1024px) {
+      #sherpa-immersive-dock {
+        min-width: 90vw;
+        max-width: 90vw;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+  document.body.appendChild(sherpaDock);
+
+  // Add event listeners
+  setupDockControls();
+  setupKeyboardShortcuts();
+}
+
+function setupDockControls() {
+  const playPauseBtn = document.getElementById('sherpa-play-pause');
+  const skipBackBtn = document.getElementById('sherpa-skip-back');
+  const skipForwardBtn = document.getElementById('sherpa-skip-forward');
+  const closeDockBtn = document.getElementById('sherpa-close-dock');
+  const progressBar = document.getElementById('sherpa-progress-bar');
+  const volumeSlider = document.getElementById('sherpa-volume-slider');
+
+  playPauseBtn?.addEventListener('click', togglePlayPause);
+  skipBackBtn?.addEventListener('click', () => skipTime(-10));
+  skipForwardBtn?.addEventListener('click', () => skipTime(10));
+  closeDockBtn?.addEventListener('click', closeDock);
+  progressBar?.addEventListener('click', seekToPosition);
+  
+  // Volume control
+  volumeSlider?.addEventListener('input', (e) => {
+    if (dockAudio) {
+      dockAudio.volume = e.target.value / 100;
+    }
+  });
+}
+
+function setupKeyboardShortcuts() {
+  // Add keyboard shortcuts for the dock
+  document.addEventListener('keydown', (e) => {
+    // Only handle shortcuts when dock is visible and not typing in input fields
+    if (!sherpaDock || e.target.matches('input, textarea, [contenteditable]')) {
+      return;
+    }
+
+    switch(e.code) {
+      case 'Space':
+        e.preventDefault();
+        togglePlayPause();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        skipTime(-5);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        skipTime(5);
+        break;
+      case 'Escape':
+        e.preventDefault();
+        closeDock();
+        break;
+    }
+  });
+}
+
+function togglePlayPause() {
+  if (!dockAudio) return;
+
+  const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
+  const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
+
+  if (dockAudio.paused) {
+    dockAudio.play();
+    playIcon.style.display = 'none';
+    pauseIcon.style.display = 'block';
+    isPlaying = true;
+  } else {
+    dockAudio.pause();
+    playIcon.style.display = 'block';
+    pauseIcon.style.display = 'none';
+    isPlaying = false;
+  }
+}
+
+function skipTime(seconds) {
+  if (!dockAudio) return;
+  dockAudio.currentTime = Math.max(0, Math.min(dockAudio.duration, dockAudio.currentTime + seconds));
+}
+
+function seekToPosition(event) {
+  if (!dockAudio) return;
+  
+  const progressBar = event.currentTarget;
+  const rect = progressBar.getBoundingClientRect();
+  const percent = (event.clientX - rect.left) / rect.width;
+  dockAudio.currentTime = percent * dockAudio.duration;
+}
+
+function closeDock() {
+  if (dockAudio) {
+    dockAudio.pause();
+    dockAudio = null;
+  }
+  
+  if (sherpaDock) {
+    sherpaDock.remove();
+    sherpaDock = null;
+  }
+  
+  // Notify popup that dock was closed
+  chrome.runtime.sendMessage({ type: 'dock_closed' });
+}
+
+function updateProgress() {
+  if (!dockAudio || !sherpaDock) return;
+
+  const progressFill = document.getElementById('sherpa-progress-fill');
+  const currentTimeEl = document.getElementById('sherpa-current-time');
+  const totalTimeEl = document.getElementById('sherpa-total-time');
+
+  const percent = (dockAudio.currentTime / dockAudio.duration) * 100;
+  progressFill.style.width = `${percent}%`;
+
+  currentTimeEl.textContent = formatTime(dockAudio.currentTime);
+  totalTimeEl.textContent = formatTime(dockAudio.duration);
+
+  // Update transcript highlight
+  updateTranscriptHighlight();
+}
+
+function formatTime(seconds) {
+  if (isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function updateTranscriptHighlight() {
+  if (!dockAudio || transcriptSegments.length === 0) return;
+
+  const currentTime = dockAudio.currentTime;
+  const words = sherpaDock.querySelectorAll('.sherpa-transcript-word');
+
+  // Simple word-by-word animation based on time
+  // Estimate words per second (average speaking rate is about 2-3 words per second)
+  const totalWords = transcriptSegments.length;
+  const wordsPerSecond = totalWords / dockAudio.duration;
+  const currentWordIndex = Math.floor(currentTime * wordsPerSecond);
+
+  let activeWord = null;
+  
+  words.forEach((word, index) => {
+    word.classList.remove('active', 'spoken');
+    
+    if (index < currentWordIndex) {
+      word.classList.add('spoken');
+    } else if (index === currentWordIndex) {
+      word.classList.add('active');
+      activeWord = word;
+    }
+  });
+  
+  // Auto-scroll to keep active word in view
+  if (activeWord) {
+    const viewer = document.getElementById('sherpa-transcript-viewer');
+    if (viewer) {
+      const wordRect = activeWord.getBoundingClientRect();
+      const viewerRect = viewer.getBoundingClientRect();
+      
+      // Check if word is out of view
+      if (wordRect.bottom > viewerRect.bottom || wordRect.top < viewerRect.top) {
+        activeWord.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+}
+
+function setTranscript(transcript) {
+  currentTranscript = transcript;
+  transcriptSegments = transcript.split(/\s+/).filter(w => w.length > 0);
+
+  const transcriptText = document.getElementById('sherpa-transcript-text');
+  if (transcriptText) {
+    transcriptText.innerHTML = transcriptSegments
+      .map((word, index) => `<span class="sherpa-transcript-word" data-index="${index}">${word}</span>`)
+      .join(' ');
+  }
+}
+
 // Add message listener to also send page structure for backend session
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.command === 'get_page_for_backend') {
@@ -651,6 +1194,66 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     } catch (error) {
       console.error('[Sherpa] Error playing notification sound:', error);
+      sendResponse({ ok: false, error: error.message });
+    }
+  }
+
+  // Show immersive summary dock
+  if (request.command === 'show_immersive_dock') {
+    try {
+      createSherpaDock();
+      
+      // Set up audio
+      if (request.audioUrl) {
+        dockAudio = new Audio(request.audioUrl);
+        dockAudio.volume = 0.8; // Set default volume to 80%
+        dockAudio.addEventListener('timeupdate', updateProgress);
+        dockAudio.addEventListener('ended', () => {
+          const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
+          const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
+          playIcon.style.display = 'block';
+          pauseIcon.style.display = 'none';
+          isPlaying = false;
+        });
+        
+        // Auto-play with a small delay
+        setTimeout(() => {
+          if (dockAudio && sherpaDock) {
+            dockAudio.play().then(() => {
+              const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
+              const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
+              playIcon.style.display = 'none';
+              pauseIcon.style.display = 'block';
+              isPlaying = true;
+              console.log('🎵 Auto-playing immersive summary');
+            }).catch(err => {
+              console.log('Auto-play blocked, user interaction required:', err);
+            });
+          }
+        }, 500);
+      }
+      
+      // Set transcript
+      if (request.transcript) {
+        setTranscript(request.transcript);
+      }
+      
+      sendResponse({ ok: true });
+      return true;
+    } catch (error) {
+      console.error('[Sherpa] Error showing immersive dock:', error);
+      sendResponse({ ok: false, error: error.message });
+    }
+  }
+
+  // Hide immersive summary dock
+  if (request.command === 'hide_immersive_dock') {
+    try {
+      closeDock();
+      sendResponse({ ok: true });
+      return true;
+    } catch (error) {
+      console.error('[Sherpa] Error hiding immersive dock:', error);
       sendResponse({ ok: false, error: error.message });
     }
   }

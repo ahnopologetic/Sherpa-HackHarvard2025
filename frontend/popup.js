@@ -966,11 +966,15 @@ function startPollingForImmersiveSummary(jobId) {
         immersiveSummaryAudio = new Audio(audioUrl);
         
         // Fetch transcript data with playback times
+        let fullTranscript = '';
         try {
           const transcriptResponse = await fetch(`${BACKEND_BASE}/v1/immersive-summary/${jobId}/transcript`);
           if (transcriptResponse.ok) {
             const transcriptData = await transcriptResponse.json();
             console.log('📝 Transcript data:', transcriptData);
+            
+            // Store full transcript text
+            fullTranscript = transcriptData.transcript || '';
             
             // Parse and store playback times
             if (transcriptData.playback_time && Array.isArray(transcriptData.playback_time)) {
@@ -988,6 +992,21 @@ function startPollingForImmersiveSummary(jobId) {
           }
         } catch (error) {
           console.warn('Could not fetch transcript data:', error);
+        }
+        
+        // Show immersive dock in the main window
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (tab?.id) {
+            await chrome.tabs.sendMessage(tab.id, {
+              command: 'show_immersive_dock',
+              audioUrl: audioUrl,
+              transcript: fullTranscript
+            });
+            console.log('✅ Immersive dock shown in main window');
+          }
+        } catch (error) {
+          console.warn('Could not show dock in main window:', error);
         }
         
         if (voiceDisplay) {
