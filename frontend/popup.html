@@ -1,108 +1,248 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sherpa</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="popup.css">
-</head>
-<body>
-  <div class="container">
-    <!-- Settings button in top-right corner -->
-    <button id="settingsBtn" class="settings-icon-button" aria-label="Configure API settings" title="Settings">
-      ⚙️
-    </button>
-    
-    <header>
-      <h1>Sherpa</h1>
-      <p class="subtitle">AI Page Structure Analysis</p>
-    </header>
-    
-    <main>
-      <button id="analyzeBtn" class="primary-button full-width" aria-label="Analyze current page structure">
-        <span id="buttonText">Analyze Page Structure</span>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sherpa - AI Page Structure Analysis</title>
+    <meta
+      name="description"
+      content="Sherpa helps visually impaired users navigate web pages through AI-powered structure analysis and voice commands"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <!-- Settings button in top-right corner -->
+      <button
+        id="settingsBtn"
+        class="settings-icon-button"
+        aria-label="Open settings to configure API key"
+        title="Settings"
+      >
+        <span aria-hidden="true">⚙️</span>
       </button>
-      
-      <!-- Key Features Rotator -->
-      <div id="keyFeatures" class="key-features">
-        <div class="feature-item active">
-          <span class="feature-icon">📖</span>
-          <span class="feature-text">Simplifying complex articles for accessibility</span>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">🎤</span>
-          <span class="feature-text">Voice navigation through article sections</span>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">🖼️</span>
-          <span class="feature-text">AI-powered image explanations for visually impaired users</span>
-        </div>
-      </div>
-      
-      <div id="statusContainer" class="status-container" role="status" aria-live="polite">
-        <div id="loadingIndicator" class="loading hidden">
-          <div class="spinner"></div>
-          <span>Analyzing page...</span>
-        </div>
-        
-        <div id="successIndicator" class="success hidden">
-          <svg class="checkmark" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-          </svg>
-          <span>Analysis complete!</span>
-        </div>
-        
-        <div id="errorIndicator" class="error hidden">
-          <svg class="error-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-          </svg>
-          <span id="errorMessage">Analysis failed</span>
-        </div>
-      </div>
-      <section id="summarySection" class="summary-section hidden" aria-live="polite">
-        <div class="summary-header">
-          <h2 class="summary-title">Summary</h2>
-          <div class="summary-meta">
-            <span id="summarySource" title="Source (cloud or built-in)"></span>
-            <span id="summaryModel" title="Model name"></span>
+
+      <header role="banner">
+        <h1 id="mainHeading">Sherpa</h1>
+        <p class="subtitle">AI Page Structure Analysis</p>
+      </header>
+
+      <main role="main" aria-labelledby="mainHeading">
+        <button
+          id="analyzeBtn"
+          class="primary-button"
+          aria-label="Analyze current page structure and generate navigation map"
+        >
+          <span id="buttonText">Analyze Page Structure</span>
+        </button>
+
+        <!-- Key Features Rotator -->
+        <div id="keyFeatures" class="key-features">
+          <div class="feature-item active">
+            <span class="feature-icon">📖</span>
+            <span class="feature-text"
+              >Simplifying complex articles for accessibility</span
+            >
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🎤</span>
+            <span class="feature-text"
+              >Voice navigation through article sections</span
+            >
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🖼️</span>
+            <span class="feature-text"
+              >AI-powered image explanations for visually impaired users</span
+            >
           </div>
         </div>
-      
-        <textarea id="summaryText" class="summary-text" rows="7" readonly
-          aria-label="AI generated summary"></textarea>
-      
-        <div class="summary-actions">
-          <button id="copySummaryBtn" class="copy-button" aria-label="Copy summary to clipboard">Copy</button>
-        </div>
-      </section>
-      
-      
-      <!-- Settings panel overlay -->
-      <div id="settingsPanel" class="settings-panel-overlay hidden">
-        <div class="settings-panel-content">
-          <div class="settings-panel-header">
-            <h3>Settings</h3>
-            <button id="closeSettingsBtn" class="close-settings-btn" aria-label="Close settings">✕</button>
+
+        <!-- Key Features Rotator -->
+        <div id="keyFeatures" class="key-features">
+          <div class="feature-item active">
+            <span class="feature-icon">📖</span>
+            <span class="feature-text"
+              >Simplifying complex articles for accessibility</span
+            >
           </div>
-          
-          <label for="apiKey">Google Gemini API Key:</label>
-          <input 
-            type="password" 
-            id="apiKey" 
-            placeholder="Enter your API key"
-            aria-describedby="apiKeyHelp"
+          <div class="feature-item">
+            <span class="feature-icon">🎤</span>
+            <span class="feature-text"
+              >Voice navigation through article sections</span
+            >
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">🖼️</span>
+            <span class="feature-text"
+              >AI-powered image explanations for visually impaired users</span
+            >
+          </div>
+        </div>
+
+        <div
+          id="statusContainer"
+          class="status-container"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <div id="loadingIndicator" class="loading hidden" role="alert">
+            <div class="spinner" aria-hidden="true"></div>
+            <span>Analyzing page...</span>
+          </div>
+
+          <div id="successIndicator" class="success hidden" role="alert">
+            <svg
+              class="checkmark"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+            </svg>
+            <span>Analysis complete!</span>
+          </div>
+
+          <div id="errorIndicator" class="error hidden" role="alert">
+            <svg
+              class="error-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+              />
+            </svg>
+            <span id="errorMessage">Analysis failed</span>
+          </div>
+        </div>
+
+        <section
+          id="summarySection"
+          class="summary-section hidden"
+          aria-labelledby="summaryTitle"
+          role="region"
+        >
+          <div class="summary-header">
+            <h2 id="summaryTitle" class="summary-title">Summary</h2>
+            <div
+              class="summary-meta"
+              role="complementary"
+              aria-label="Summary metadata"
+            >
+              <span id="summarySource" aria-label="Analysis source"></span>
+              <span id="summaryModel" aria-label="AI model used"></span>
+            </div>
+          </div>
+
+          <textarea
+            id="summaryText"
+            class="summary-text"
+            rows="7"
+            readonly
+            aria-label="AI generated page summary"
+            aria-describedby="summaryHelp"
+          ></textarea>
+          <span id="summaryHelp" class="visually-hidden"
+            >This is the AI-generated summary of the current page structure. Use
+            text-to-speech controls to listen or copy button to save the
+            content.</span
           >
-          <small id="apiKeyHelp">Get your free API key from <a href="https://makersuite.google.com/app/apikey" target="_blank">Google AI Studio</a></small>
-          <button id="saveApiKey" class="save-button">Save Key</button>
-          <div id="apiKeyStatus" class="api-key-status"></div>
+
+          <div
+            class="summary-actions"
+            role="toolbar"
+            aria-label="Summary actions"
+          >
+            <button
+              id="copySummaryBtn"
+              class="copy-button"
+              aria-label="Copy summary text to clipboard"
+            >
+              Copy
+            </button>
+          </div>
+        </section>
+
+        <!-- Settings panel overlay -->
+        <div
+          id="settingsPanel"
+          class="settings-panel-overlay hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settingsTitle"
+          aria-describedby="settingsDescription"
+        >
+          <div class="settings-panel-content">
+            <div class="settings-panel-header">
+              <h3 id="settingsTitle">Settings</h3>
+              <button
+                id="closeSettingsBtn"
+                class="close-settings-btn"
+                aria-label="Close settings dialog"
+              >
+                <span aria-hidden="true">✕</span>
+              </button>
+            </div>
+
+            <p id="settingsDescription" class="visually-hidden">
+              Configure your Google Gemini API key to enable cloud-based AI
+              analysis
+            </p>
+
+            <label for="apiKey">Google Gemini API Key:</label>
+            <input
+              type="password"
+              id="apiKey"
+              placeholder="Enter your API key"
+              aria-describedby="apiKeyHelp"
+              aria-required="true"
+            />
+            <small id="apiKeyHelp"
+              >Get your free API key from
+              <a
+                href="https://makersuite.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open Google AI Studio in new tab"
+                >Google AI Studio</a
+              ></small
+            >
+            <button
+              id="saveApiKey"
+              class="save-button"
+              aria-label="Save API key"
+            >
+              Save Key
+            </button>
+            <div
+              id="apiKeyStatus"
+              class="api-key-status"
+              role="status"
+              aria-live="polite"
+            ></div>
+          </div>
         </div>
-      </div>
-    </main>
-  </div>
-  
-  <script src="popup.js"></script>
-</body>
+      </main>
+    </div>
+
+    <!-- Screen reader announcements -->
+    <div
+      id="srAnnouncements"
+      class="visually-hidden"
+      role="status"
+      aria-live="assertive"
+      aria-atomic="true"
+    ></div>
+
+    <script src="popup.js"></script>
+  </body>
 </html>
