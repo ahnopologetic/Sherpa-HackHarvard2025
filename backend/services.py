@@ -422,11 +422,13 @@ Based on the provided section map, split the immersive summary into distinct sec
             page_title=page_title,
             context=context,
         )
+        logger.info(f"{result.playback_time=}")
         ImmersiveSummaryService.generate_immersive_summary_audio(
             transcript=result.transcript,
             output_filepath=f"{job_id}.wav",
         )
         jobs[job_id]["status"] = "completed"
+        jobs[job_id]["transcript_data"] = result
         logger.info("Immersive summary audio job completed")
 
     def get_immersive_summary_audio(job_id: str) -> bytes:
@@ -440,3 +442,17 @@ Based on the provided section map, split the immersive summary into distinct sec
         if not os.path.exists(f"{job_id}.wav"):
             raise ValueError("File not found")
         return open(f"{job_id}.wav", "rb").read()
+
+    def get_immersive_summary_transcript(
+        job_id: str,
+    ) -> ImmersiveSummaryTranscriptResponse:
+        """
+        Get the immersive summary transcript data with playback times.
+        """
+        if job_id not in jobs:
+            raise ValueError("Job not found")
+        if jobs[job_id]["status"] != "completed":
+            raise ValueError("Job not completed")
+        if "transcript_data" not in jobs[job_id]:
+            raise ValueError("Transcript data not found")
+        return jobs[job_id]["transcript_data"]

@@ -26,6 +26,7 @@ from models import (
     CreateSessionResponse,
     ImmersiveSummaryRequest,
     ImmersiveSummaryResponse,
+    ImmersiveSummaryTranscriptResponse,
     InterpretResponse,
     GeneralQuestionRequest,
     GeneralQuestionResponse,
@@ -206,6 +207,26 @@ async def get_immersive_summary_audio(job_id: str):
     return FileResponse(
         path=file_path, media_type="audio/wav", filename=f"{job_id}.wav"
     )
+
+
+@app.get(
+    "/v1/immersive-summary/{job_id}/transcript",
+    response_model=ImmersiveSummaryTranscriptResponse,
+    summary="Get the immersive summary transcript with playback times",
+    description="Get the immersive summary transcript data including section playback times for syncing with audio.",
+)
+async def get_immersive_summary_transcript(job_id: str):
+    """
+    Get the immersive summary transcript data with playback times.
+    """
+    try:
+        result = ImmersiveSummaryService.get_immersive_summary_transcript(job_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Transcript retrieval error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

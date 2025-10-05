@@ -115,12 +115,19 @@ class ImmersiveSummaryResponse(BaseModel):
     job_id: str = Field(..., description="Job ID for the immersive summary")
 
 
+class ImmersiveSummaryTranscriptPlaybackTime(BaseModel):
+    """Response model for immersive summary transcript playback time"""
+
+    name: str = Field(..., description="Name of the section")
+    playback_time: str = Field(..., description="Playback time of the section")
+
+
 class ImmersiveSummaryTranscriptResponse(BaseModel):
     """Response model for immersive summary transcript"""
 
     transcript: str = Field(..., description="Transcript of the immersive summary")
     error: Optional[str] = Field(None, description="Error message if the job failed")
-    playback_time: Optional[dict[str, str]] = Field(
+    playback_time: Optional[List[ImmersiveSummaryTranscriptPlaybackTime]] = Field(
         None,
-        description="Playback time of the transcript. For example: {'Main article': '00:00', 'Comments': '00:00', ...}",
+        description="Playback time of the transcript. For example: [{'name': 'Main article', 'playback_time': '00:00'}, ...]",
     )
