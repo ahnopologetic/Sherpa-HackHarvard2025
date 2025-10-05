@@ -12,6 +12,29 @@
     "tabCapture",
     "webRequest"
   ],
+  "commands": {
+    "toggle-side-panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Toggle Sherpa side panel"
+    },
+    "analyze-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+A",
+        "mac": "Command+Shift+A"
+      },
+      "description": "Analyze current page structure"
+    },
+    "quick-navigation": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+N",
+        "mac": "Command+Shift+N"
+      },
+      "description": "Open quick navigation"
+    }
+  },
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
     "http://sherpa-hackharvard2025-production.up.railway.app/*",

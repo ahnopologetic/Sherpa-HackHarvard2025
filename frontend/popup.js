@@ -13,6 +13,33 @@ const successIndicator = document.getElementById('successIndicator');
 const errorIndicator = document.getElementById('errorIndicator');
 const errorMessage = document.getElementById('errorMessage');
 
+// ---- Layout Control ----
+const container = document.querySelector('.container');
+
+// Layout control functions
+function setCenteredLayout() {
+  if (container) {
+    container.classList.add('centered');
+  }
+}
+
+function setNormalLayout() {
+  if (container) {
+    container.classList.remove('centered');
+  }
+}
+
+// Check if this is the first time opening the extension
+function isFirstTime() {
+  const hasAnalyzed = localStorage.getItem('sherpa_has_analyzed');
+  return !hasAnalyzed;
+}
+
+// Mark that user has analyzed a page
+function markAsAnalyzed() {
+  localStorage.setItem('sherpa_has_analyzed', 'true');
+}
+
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsPanel = document.getElementById('settingsPanel');
 const closeSettingsBtn = document.getElementById('closeSettingsBtn');
@@ -626,13 +653,6 @@ function ensureVoiceUI() {
   sectionSummaryBtn.setAttribute('aria-label', 'Generate summary of current section');
   sectionSummaryBtn.style.textTransform = 'uppercase';
 
-  // Immersive Summary button
-  const immersiveSummaryBtn = document.createElement('button');
-  immersiveSummaryBtn.id = 'immersiveSummaryBtn';
-  immersiveSummaryBtn.textContent = '🎭 Immersive Summary';
-  immersiveSummaryBtn.className = 'primary-button flex-button';
-  immersiveSummaryBtn.setAttribute('aria-label', 'Generate comprehensive summary with images and screenshots');
-  immersiveSummaryBtn.style.textTransform = 'uppercase';
   explainImagesBtn.style.letterSpacing = '0.5px';
 
   // Hover effects for explain images button
@@ -694,7 +714,6 @@ function ensureVoiceUI() {
   recordBtn.addEventListener('click', handleRecordToggle);
   explainImagesBtn.addEventListener('click', handleExplainImages);
   sectionSummaryBtn.addEventListener('click', generateSectionSummary);
-  immersiveSummaryBtn.addEventListener('click', generateImmersiveSummary);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
@@ -705,7 +724,6 @@ function ensureVoiceUI() {
   buttonContainer.appendChild(recordBtn);
   buttonContainer.appendChild(explainImagesBtn);
   buttonContainer.appendChild(sectionSummaryBtn);
-  buttonContainer.appendChild(immersiveSummaryBtn);
   buttonContainer.appendChild(submitBtn);
 
   voiceSection.appendChild(header);
@@ -942,12 +960,13 @@ Image Information:
 - Page: ${tab.title}
 - Section: ${img.section || 'Unknown section'}
 
-Please provide a helpful description of what this image likely shows based on the filename, alt text, and surrounding context. Focus on:
-1. What the image probably depicts
+Please provide a helpful description of what this image shows. Use the filename, alt text, and surrounding context to help you. Focus on:
+1. What the image depicts
 2. Why it's relevant to the article content
 3. Key details that would help someone understand the image
+4. DESCIBE THE PICTURE EVEN IF YOU CANT ACURATELY DESCRIBE IT. This is important to help the user try to image. I dont care if you cant describe it accurately, just describe it as best you can.
 
-Keep your explanation conversational and under 100 words.`;
+Keep your explanation conversational and under 50 words and straight to the point no fluff. ALWAYS START WITH "Based on the surrounding context, this image is or shows..." DONT USE WORS LIKE Probably, Depicts, or likely`;
           
           // Use new general Q&A endpoint for image explanation
           const imageResponse = await askGeneralQuestion(
@@ -1032,9 +1051,8 @@ Content: ${sectionData.content.substring(0, 2000)}${sectionData.content.length >
 Please provide:
 1. A brief overview of what this section covers
 2. The main points or key information
-3. Any important details that would be helpful for accessibility
 
-Keep the summary under 150 words and make it conversational and accessible.`;
+Keep the summary under 150 words and make it conversational and accessible. stright to the point no menition of visually impaired, no fluff. NEVER START WITH WORS LIKE here is a summary of simply go straight to the point please NO FLUFF. DONT USE WORS LIKE Probably, Depicts, or likely`;
       
       try {
         // Use new general Q&A endpoint for section summary
@@ -1113,186 +1131,6 @@ function createSimpleSummary(sectionData) {
   return `This section is about "${sectionTitle}". ${firstSentence}${firstSentence.length < content.length ? '...' : ''}`;
 }
 
-// ===== Immersive Summary Function =====
-async function generateImmersiveSummary() {
-  try {
-    console.log('🎭 Collecting data for immersive summary...');
-    
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '🎭 Collecting data for comprehensive analysis...';
-    }
-    
-    // Get the current tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    // Step 1: Extract section content (raw data)
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '📄 Step 1: Extracting section content...';
-    }
-    
-    const sectionResponse = await chrome.tabs.sendMessage(tab.id, {
-      command: 'extract_current_section'
-    });
-    
-    let sectionData = null;
-    if (sectionResponse?.ok && sectionResponse.sectionContent) {
-      sectionData = sectionResponse.sectionContent;
-      console.log('📄 Section data extracted:', sectionData);
-    }
-    
-    // Step 2: Extract image data (raw data)
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '🖼️ Step 2: Extracting image data...';
-    }
-    
-    const imageResponse = await chrome.tabs.sendMessage(tab.id, {
-      command: 'extract_viewport_images'
-    });
-    
-    let imageData = null;
-    if (imageResponse?.ok && imageResponse.images?.length > 0) {
-      imageData = imageResponse.images;
-      console.log('🖼️ Image data extracted:', imageData);
-    }
-    
-    // Step 3: Capture screenshot using Chrome API
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '📸 Step 3: Capturing screenshot...';
-    }
-    
-    let screenshotData = null;
-    try {
-      console.log('📸 Attempting to capture screenshot...');
-      console.log('📸 Chrome tabs API available:', typeof chrome.tabs !== 'undefined');
-      console.log('📸 captureVisibleTab available:', typeof chrome.tabs?.captureVisibleTab !== 'undefined');
-      
-      // Use Chrome's built-in screenshot API (available in popup context)
-      screenshotData = await new Promise((resolve, reject) => {
-        chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
-          if (chrome.runtime.lastError) {
-            console.error('📸 Chrome API error:', chrome.runtime.lastError);
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            console.log('📸 Screenshot data URL length:', dataUrl ? dataUrl.length : 'null');
-            resolve(dataUrl);
-          }
-        });
-      });
-      console.log('📸 Screenshot captured successfully:', screenshotData ? 'Yes' : 'No');
-    } catch (error) {
-      console.error('📸 Screenshot capture failed:', error.message);
-      console.error('📸 Full error:', error);
-      screenshotData = null;
-    }
-    
-    // Step 4: Generate summaries from raw data
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '📝 Step 4: Generating summaries...';
-    }
-    
-    // Generate section summary
-    let sectionSummary = '';
-    if (sectionData) {
-      const sectionPrompt = `Please create a concise summary of this section for a visually impaired user.
-
-Section: "${sectionData.sectionTitle}"
-Content: ${sectionData.content}
-
-Please provide:
-1. A brief overview of what this section covers
-2. The main points or key information
-3. Any important details that would be helpful for accessibility
-
-Keep the summary under 150 words and make it conversational and accessible.`;
-      
-      const sectionSummaryResponse = await askGeneralQuestion(
-        sectionPrompt,
-        sectionData.content,
-        tab.title,
-        tab.url
-      );
-      
-      sectionSummary = sectionSummaryResponse?.answer || 'Could not generate section summary.';
-    }
-    
-    // Generate image summary
-    let imageSummary = '';
-    if (imageData && imageData.length > 0) {
-      const imageDescriptions = [];
-      
-      for (let i = 0; i < Math.min(3, imageData.length); i++) {
-        const img = imageData[i];
-        const filename = img.src.split('/').pop().split('.')[0] || 'image';
-        
-        const imagePrompt = `I need you to explain an image for a visually impaired user. Here are the details:
-
-Image Information:
-- Filename: ${filename}
-- Alt text: ${img.alt || 'No alt text provided'}
-- Context from page: ${img.context || 'No context available'}
-- Page: ${tab.title}
-- Section: ${img.section || 'Unknown section'}
-
-Please provide a helpful description of what this image likely shows based on the filename, alt text, and surrounding context. Focus on:
-1. What the image probably depicts
-2. Why it's relevant to the article content
-3. Key details that would help someone understand the image
-
-Keep your explanation conversational and under 100 words.`;
-        
-        const imageSummaryResponse = await askGeneralQuestion(
-          imagePrompt,
-          `Image context: ${img.context || 'No context available'}. Page section: ${img.section || 'Unknown section'}`,
-          tab.title,
-          tab.url
-        );
-        
-        if (imageSummaryResponse?.answer) {
-          imageDescriptions.push(`Image ${i + 1}: ${imageSummaryResponse.answer}`);
-        }
-      }
-      
-      imageSummary = imageDescriptions.join('\n\n');
-    } else {
-      imageSummary = 'No images found in the current viewport.';
-    }
-    
-    // Step 5: Prepare final data in the requested format
-    if (voiceDisplay) {
-      voiceDisplay.textContent = '📦 Step 5: Preparing final data...';
-    }
-    
-    const finalData = {
-      section_summary: sectionSummary,
-      image_summary: imageSummary,
-      screenshot: screenshotData
-    };
-    
-    console.log('📦 Final immersive data prepared:', finalData);
-    
-    // Display the final result
-    if (voiceDisplay) {
-      const summary = `🎭 Immersive Summary Complete!
-
-📄 Section Summary: ${sectionSummary.substring(0, 100)}...
-🖼️ Image Summary: ${imageSummary.substring(0, 100)}...
-📸 Screenshot: ${screenshotData ? 'Captured' : 'Failed'}
-
-Data ready for backend processing.`;
-      
-      voiceDisplay.textContent = summary;
-    }
-    
-    // TODO: Send finalData to backend endpoint for processing
-    // This is where you would call your backend endpoint with the formatted data
-    
-  } catch (error) {
-    console.error('❌ Error collecting immersive data:', error);
-    if (voiceDisplay) {
-      voiceDisplay.textContent = `❌ Error: ${error.message}`;
-    }
-  }
-}
 
 // ===== General Q&A Function =====
 async function askGeneralQuestion(question, context = null, pageTitle = null, pageUrl = null) {
@@ -1485,6 +1323,10 @@ async function startAnalysis() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('No active tab');
+
+    // Mark as analyzed and change layout to normal
+    markAsAnalyzed();
+    setNormalLayout();
 
     isAnalyzing = true;
     showLoading();
@@ -1747,6 +1589,14 @@ window.addEventListener('unload', () => {
 // ---- Init ----
 (async function init() {
   hideAllIndicators();
+  
+  // Initialize layout based on first-time usage
+  if (isFirstTime()) {
+    setCenteredLayout();
+  } else {
+    setNormalLayout();
+  }
+  
   // Check recording state and microphone permissions on popup load
   await checkRecordingState();
   
@@ -1801,4 +1651,28 @@ window.addEventListener('unload', () => {
     }
   });
 })();
+
+// ===== Keyboard Shortcut Message Listeners =====
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  switch (message.type) {
+    case 'show_quick_navigation':
+      // Show quick navigation section if it exists
+      const quickNavSection = document.getElementById('quickNavigation');
+      if (quickNavSection) {
+        quickNavSection.scrollIntoView({ behavior: 'smooth' });
+        announceToScreenReader('Quick navigation section focused', 'polite');
+      }
+      break;
+      
+      
+    case 'trigger_analysis':
+      // Trigger page analysis if button exists
+      const analyzeBtn = document.getElementById('analyzeBtn');
+      if (analyzeBtn && !analyzeBtn.disabled) {
+        analyzeBtn.click();
+        announceToScreenReader('Page analysis started', 'polite');
+      }
+      break;
+  }
+});
 

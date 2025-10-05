@@ -35,7 +35,7 @@ function buildPrompt(pageStructure) {
   const jsonStr = JSON.stringify(pageStructure, null, 2);
   return `You are an expert web accessibility assistant helping screen reader users understand webpage layouts quickly.
 
-Based on the page structure data below, generate a structured markdown summary that helps visually impaired users understand the page content. Use this format:
+Based on the page structure data below, generate a structured markdown summary. Use this format:
 
 ## 📄 Page Overview
 [Brief description of what this page is about]
@@ -53,7 +53,7 @@ Based on the page structure data below, generate a structured markdown summary t
 ## 🧭 Navigation Options
 [Mention key sections users can navigate to]
 
-Focus on the most important sections (h1, h2 level headings). Be conversational but organized. Keep the entire summary under 200 words.
+Focus on the most important sections (h1, h2 level headings). Be conversational but organized. Keep the entire summary under 200 words. Straight to the summary no fluff.
 
 Page Structure Data:
 ${jsonStr}`;
@@ -421,11 +421,92 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// ===== Install hook =====
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    console.log('Project Atlas installed');
+// ===== Keyboard Shortcuts =====
+chrome.commands.onCommand.addListener(async (command) => {
+  console.log(`[Sherpa] Keyboard command received: ${command}`);
+  
+  try {
+    switch (command) {
+      case 'toggle-side-panel':
+        await toggleSidePanel();
+        break;
+        
+      case 'analyze-page':
+        await analyzeCurrentPage();
+        break;
+        
+      case 'quick-navigation':
+        await openQuickNavigation();
+        break;
+        
+        
+      default:
+        console.log(`[Sherpa] Unknown command: ${command}`);
+    }
+  } catch (error) {
+    console.error(`[Sherpa] Error handling command ${command}:`, error);
   }
 });
 
-console.log('Project Atlas background service worker loaded');
+// ===== Command Functions =====
+async function toggleSidePanel() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    
+    // Check if side panel is currently open
+    const sidePanelState = await chrome.storage.local.get(['sidePanelOpen']);
+    const isOpen = sidePanelState.sidePanelOpen || false;
+    
+    if (isOpen) {
+      // Close side panel
+      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: false });
+      await chrome.storage.local.set({ sidePanelOpen: false });
+      console.log('[Sherpa] Side panel closed via keyboard shortcut');
+    } else {
+      // Open side panel
+      await chrome.sidePanel.setOptions({ tabId: tab.id, enabled: true });
+      await chrome.sidePanel.open({ tabId: tab.id });
+      await chrome.storage.local.set({ sidePanelOpen: true });
+      console.log('[Sherpa] Side panel opened via keyboard shortcut');
+    }
+  } catch (error) {
+    console.error('[Sherpa] Error toggling side panel:', error);
+  }
+}
+
+async function analyzeCurrentPage() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    
+    // Send message to content script to trigger analysis
+    await chrome.tabs.sendMessage(tab.id, { command: 'trigger_analysis' });
+    console.log('[Sherpa] Page analysis triggered via keyboard shortcut');
+  } catch (error) {
+    console.error('[Sherpa] Error triggering page analysis:', error);
+  }
+}
+
+async function openQuickNavigation() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    
+    // Send message to popup to show quick navigation
+    await chrome.runtime.sendMessage({ type: 'show_quick_navigation' });
+    console.log('[Sherpa] Quick navigation opened via keyboard shortcut');
+  } catch (error) {
+    console.error('[Sherpa] Error opening quick navigation:', error);
+  }
+}
+
+
+// ===== Install hook =====
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install') {
+    console.log('Sherpa installed');
+  }
+});
+
+console.log('Sherpa background service worker loaded');

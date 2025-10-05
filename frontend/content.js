@@ -273,6 +273,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true, sectionContent });
       return true;
     }
+    
+    if (msg?.command === 'trigger_analysis') {
+      // Trigger page analysis by sending message to background script
+      chrome.runtime.sendMessage({ type: 'trigger_page_analysis' }).catch(() => {});
+      sendResponse({ ok: true });
+      return true;
+    }
   } catch (e) {
     console.error('[Sherpa] content error:', e);
     sendResponse({ ok: false, error: e.message });
