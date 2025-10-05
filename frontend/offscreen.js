@@ -2,6 +2,8 @@ let recorder;
 let data = [];
 let activeStreams = [];
 
+const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+
 chrome.runtime.onMessage.addListener(async (message) => {
     if (message.target === "offscreen") {
         switch (message.type) {
