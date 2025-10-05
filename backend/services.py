@@ -163,9 +163,23 @@ class InterpretService:
                 If audio is provided, first transcribe it and then interpret the command. Include the transcription in the "transcription" field.
                 You need to return the intent, target section id, confidence, tts text, transcription (for audio), and alternatives.
                 The intent can be NAVIGATE, READ_SECTION, LIST_SECTIONS, or UNKNOWN.
-                The target section id is the id of the section that the user wants to navigate to.
-                The confidence is a number between 0 and 1.
-                For the transcription field: if this is audio input, include the transcribed text. If text input, you can leave it null or copy the text.
+                
+                Intent Guidelines:
+                - NAVIGATE: User wants to jump/scroll to a specific section (e.g., "go to comments", "show me the footer")
+                - READ_SECTION: User wants to read/hear the content of a specific section (e.g., "read the main article")
+                - LIST_SECTIONS: User wants to know what sections are available (e.g., "what sections are there?", "what can I navigate to?", "show available sections", "list sections")
+                - UNKNOWN: Cannot determine intent or section
+                
+                For LIST_SECTIONS intent:
+                - Set target_section_id to an empty string ""
+                - In tts_text, provide a friendly spoken list of available sections with brief descriptions based on their labels and roles
+                - Example tts_text: "There are 3 sections available: Main article for the main content, Comments section for discussions, and Footer for additional information."
+                - Keep it concise and natural for text-to-speech
+                
+                For other intents:
+                - The target_section_id is the id of the section that the user wants to navigate to or read
+                - The confidence is a number between 0 and 1
+                - For the transcription field: if this is audio input, include the transcribed text. If text input, you can leave it null or copy the text.
 
                 Given the section map below, please interpret the command and return the intent, target section id, confidence, tts text, transcription, and alternatives.
                 {section_map}

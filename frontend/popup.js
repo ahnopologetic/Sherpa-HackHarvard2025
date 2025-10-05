@@ -140,6 +140,9 @@ async function handleRecordToggle() {
 
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
+let playBtn, pauseBtn, replayBtn;
+let currentSummary = ''; // Store the current summary for TTS controls
+let isTTSSpeaking = false;
 
 function ensureSummaryUI() {
   if (summarySection) return;
@@ -197,9 +200,91 @@ function ensureSummaryUI() {
 
   const actions = document.createElement('div');
   actions.style.display = 'flex';
-  actions.style.justifyContent = 'flex-end';
+  actions.style.justifyContent = 'space-between';
+  actions.style.alignItems = 'center';
   actions.style.marginTop = '8px';
+  actions.style.gap = '8px';
 
+  // TTS Control buttons container
+  const ttsControls = document.createElement('div');
+  ttsControls.style.display = 'flex';
+  ttsControls.style.gap = '8px';
+
+  // Play button
+  playBtn = document.createElement('button');
+  playBtn.innerHTML = '▶️';
+  playBtn.title = 'Play summary';
+  playBtn.style.background = 'white';
+  playBtn.style.color = '#1f2937';
+  playBtn.style.border = 'none';
+  playBtn.style.padding = '8px 12px';
+  playBtn.style.fontSize = '16px';
+  playBtn.style.borderRadius = '6px';
+  playBtn.style.cursor = 'pointer';
+  playBtn.style.transition = 'all 0.2s ease';
+  playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  playBtn.addEventListener('click', () => playSummary());
+  playBtn.addEventListener('mouseenter', () => {
+    playBtn.style.transform = 'translateY(-1px)';
+    playBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  playBtn.addEventListener('mouseleave', () => {
+    playBtn.style.transform = 'translateY(0)';
+    playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  // Pause button
+  pauseBtn = document.createElement('button');
+  pauseBtn.innerHTML = '⏸️';
+  pauseBtn.title = 'Pause summary';
+  pauseBtn.style.background = 'white';
+  pauseBtn.style.color = '#1f2937';
+  pauseBtn.style.border = 'none';
+  pauseBtn.style.padding = '8px 12px';
+  pauseBtn.style.fontSize = '16px';
+  pauseBtn.style.borderRadius = '6px';
+  pauseBtn.style.cursor = 'pointer';
+  pauseBtn.style.transition = 'all 0.2s ease';
+  pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  pauseBtn.style.display = 'none'; // Hidden by default
+  pauseBtn.addEventListener('click', () => pauseSummary());
+  pauseBtn.addEventListener('mouseenter', () => {
+    pauseBtn.style.transform = 'translateY(-1px)';
+    pauseBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  pauseBtn.addEventListener('mouseleave', () => {
+    pauseBtn.style.transform = 'translateY(0)';
+    pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  // Replay button
+  replayBtn = document.createElement('button');
+  replayBtn.innerHTML = '🔄';
+  replayBtn.title = 'Replay summary';
+  replayBtn.style.background = 'white';
+  replayBtn.style.color = '#1f2937';
+  replayBtn.style.border = 'none';
+  replayBtn.style.padding = '8px 12px';
+  replayBtn.style.fontSize = '16px';
+  replayBtn.style.borderRadius = '6px';
+  replayBtn.style.cursor = 'pointer';
+  replayBtn.style.transition = 'all 0.2s ease';
+  replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  replayBtn.addEventListener('click', () => replaySummary());
+  replayBtn.addEventListener('mouseenter', () => {
+    replayBtn.style.transform = 'translateY(-1px)';
+    replayBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
+  });
+  replayBtn.addEventListener('mouseleave', () => {
+    replayBtn.style.transform = 'translateY(0)';
+    replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
+  });
+
+  ttsControls.appendChild(playBtn);
+  ttsControls.appendChild(pauseBtn);
+  ttsControls.appendChild(replayBtn);
+
+  // Copy button
   copySummaryBtn = document.createElement('button');
   copySummaryBtn.textContent = 'Copy';
   copySummaryBtn.style.background = 'white';
@@ -221,6 +306,7 @@ function ensureSummaryUI() {
     }
   });
 
+  actions.appendChild(ttsControls);
   actions.appendChild(copySummaryBtn);
 
   summarySection.appendChild(header);
@@ -228,6 +314,44 @@ function ensureSummaryUI() {
   summarySection.appendChild(actions);
 
   main.appendChild(summarySection);
+}
+
+// ---- TTS Control Functions ----
+function playSummary() {
+  if (!currentSummary) return;
+  
+  chrome.runtime.sendMessage({
+    type: 'speak_text',
+    text: currentSummary,
+    langHint: pageStructureData?.language || pageStructureData?.lang || null
+  });
+  
+  // State will be updated by tts_started/tts_ended messages
+}
+
+function pauseSummary() {
+  chrome.runtime.sendMessage({ type: 'stop_tts' });
+  // State will be updated by tts_ended message
+}
+
+function replaySummary() {
+  // Stop current TTS and replay
+  chrome.runtime.sendMessage({ type: 'stop_tts' });
+  setTimeout(() => {
+    playSummary();
+  }, 100);
+}
+
+function updateTTSButtons() {
+  if (!playBtn || !pauseBtn) return;
+  
+  if (isTTSSpeaking) {
+    playBtn.style.display = 'none';
+    pauseBtn.style.display = 'block';
+  } else {
+    playBtn.style.display = 'block';
+    pauseBtn.style.display = 'none';
+  }
 }
 
 // ---- Voice Command UI (Text Input Version) ----
@@ -587,6 +711,18 @@ async function processInterpretation(interpretation, originalCommand = null) {
   voiceDisplay.textContent = displayText;
 
   try {
+    // Speak the TTS text
+    if (interpretation.tts_text) {
+      const langHint = pageStructureData?.language || pageStructureData?.lang || null;
+      chrome.runtime.sendMessage({
+        type: 'speak_text',
+        text: interpretation.tts_text,
+        langHint: langHint
+      }).catch(err => {
+        console.error('TTS error:', err);
+      });
+    }
+
     // Navigate if intent is NAVIGATE
     if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
       voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
@@ -595,12 +731,14 @@ async function processInterpretation(interpretation, originalCommand = null) {
 
       voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else if (interpretation.intent === 'LIST_SECTIONS') {
+      // Show sections in the display
       voiceDisplay.textContent += '\n📋 Available sections:\n';
       if (pageStructureData && pageStructureData.sections) {
         pageStructureData.sections.forEach(section => {
           voiceDisplay.textContent += `  • ${section.label} (${section.role})\n`;
         });
       }
+      voiceDisplay.textContent += `\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else {
       voiceDisplay.textContent += `\nIntent: ${interpretation.intent}`;
     }
@@ -790,10 +928,12 @@ chrome.runtime.onMessage.addListener(async (message) => {
     showSuccess();
 
     ensureSummaryUI();
-    summaryText.value = message.summary || '';
+    currentSummary = message.summary || ''; // Store for TTS controls
+    summaryText.value = currentSummary;
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
     summaryModel.textContent = message.model ? `model: ${message.model}` : '';
     summarySection.style.display = 'block';
+    updateTTSButtons();
 
     // Show voice command UI and create backend session
     ensureVoiceUI();
@@ -821,6 +961,17 @@ chrome.runtime.onMessage.addListener(async (message) => {
     isAnalyzing = false;
     clearAnalyzeTimeout();
     showError(message.error || 'Analysis failed');
+  }
+
+  // Handle TTS state changes
+  if (message.type === 'tts_started') {
+    isTTSSpeaking = true;
+    updateTTSButtons();
+  }
+
+  if (message.type === 'tts_ended') {
+    isTTSSpeaking = false;
+    updateTTSButtons();
   }
 });
 

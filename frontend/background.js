@@ -38,7 +38,10 @@ function buildPrompt(pageStructure) {
 A user has just landed on a webpage. Based on the semantic structure data below, generate a concise audio summary that helps them understand:
 1) the page's purpose, 2) the primary sections, 3) key navigation options, 4) notable accessibility features.
 
-Keep it conversational and concise (2–4 sentences). Provide ONLY the spoken summary text.
+For the navigation options, you must be more friendly about it and say something like "You can navigate to the <section name> section where you can find more information about <section purpose>."
+Give the navigation options in the end so that user can know the options available to them.
+
+Keep it conversational and concise (3–5 sentences). Provide ONLY the spoken summary text.
 
 Page Structure Data:
 ${jsonStr}`;
@@ -202,9 +205,16 @@ async function handlePageAnalysis(pageStructure) {
 
     // Then speak, updating status along the way
     notifyPopup('speaking', 'Speaking summary…');
+    
+    // Notify popup that TTS started
+    chrome.runtime.sendMessage({ type: 'tts_started' }).catch(() => { });
+    
     const langHint = pageStructure?.language || pageStructure?.lang || null;
     await speakText(summary, langHint);
 
+    // Notify popup that TTS ended
+    chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+    
     notifyPopup('complete');
 
 
@@ -236,10 +246,57 @@ chrome.runtime.onMessage.addListener(async (message, _sender, sendResponse) => {
     return true; // keep port open for async
   }
 
+  // Handle TTS request from popup
+  if (message?.type === 'speak_text') {
+    const { text, langHint } = message;
+    
+    // Notify that TTS started
+    chrome.runtime.sendMessage({ type: 'tts_started' }).catch(() => { });
+    
+    speakText(text, langHint)
+      .then(() => {
+        chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+        sendResponse({ status: 'success' });
+      })
+      .catch((e) => {
+        chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+        sendResponse({ status: 'error', message: e.message });
+      });
+    return true; // keep port open for async
+  }
+
+  // Stop TTS (pause functionality)
+  if (message?.type === 'stop_tts') {
+    chrome.tts.stop();
+    console.log('[Sherpa] TTS stopped by user');
+    
+    // Notify that TTS ended
+    chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+    
+    sendResponse({ status: 'success' });
+    return true;
+  }
+
+  // Stop TTS when recording starts
+  if (message?.type === 'start-recording') {
+    chrome.tts.stop();
+    console.log('[Sherpa] TTS stopped - recording started');
+    
+    // Notify that TTS ended
+    chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+  }
+
   if (message.target === "service-worker") {
     switch (message.type) {
       case "request-recording":
         try {
+          // Stop TTS before starting recording
+          chrome.tts.stop();
+          console.log('[Sherpa] TTS stopped - recording requested');
+          
+          // Notify that TTS ended
+          chrome.runtime.sendMessage({ type: 'tts_ended' }).catch(() => { });
+
           const [tab] = await chrome.tabs.query({
             active: true,
             currentWindow: true,
