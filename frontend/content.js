@@ -221,12 +221,12 @@ function parsePageForMapping() {
     
     // Only add if it has a meaningful label
     if (label && label !== 'div' && label !== el.tagName.toLowerCase()) {
-      sections.push({
-        id,
+    sections.push({
+      id,
         label,
         role: (el.getAttribute('role') || el.tagName.toLowerCase()),
         type: 'landmark'
-      });
+    });
     }
   });
 
@@ -266,6 +266,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.command === 'extract_viewport_images') {
       const viewportImages = extractViewportImages();
       sendResponse({ ok: true, ...viewportImages });
+      return true;
+    }
+    if (msg?.command === 'extract_current_section') {
+      const sectionContent = extractCurrentSectionContent();
+      sendResponse({ ok: true, sectionContent });
       return true;
     }
   } catch (e) {
@@ -444,6 +449,112 @@ function getImageSection(img) {
   }
   
   return '';
+}
+
+// ===== Section-Specific Summary Function =====
+function extractCurrentSectionContent() {
+  console.log('[Sherpa] ===== EXTRACTING CURRENT SECTION CONTENT =====');
+  
+  // Get the current scroll position to determine which section is in view
+  const scrollY = window.scrollY;
+  const viewportHeight = window.innerHeight;
+  const centerY = scrollY + (viewportHeight / 2);
+  
+  console.log(`[Sherpa] Current scroll position: ${scrollY}, Center: ${centerY}`);
+  
+  // Find the section that's currently in the center of the viewport
+  let currentSection = null;
+  let currentSectionElement = null;
+  
+  // Look for headings and their associated content
+  const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  
+  for (let i = 0; i < headings.length; i++) {
+    const heading = headings[i];
+    const rect = heading.getBoundingClientRect();
+    const headingTop = rect.top + scrollY;
+    
+    // Check if this heading is near the center of the viewport
+    if (headingTop <= centerY && headingTop > scrollY - 100) {
+      currentSection = heading.textContent.trim();
+      currentSectionElement = heading;
+      console.log(`[Sherpa] Found current section: "${currentSection}"`);
+      break;
+    }
+  }
+  
+  if (!currentSectionElement) {
+    console.log('[Sherpa] No specific section found, using main content area');
+    // Fallback to main content area
+    const mainContent = document.querySelector('main, article, .content, #content, .main-content');
+    if (mainContent) {
+      currentSectionElement = mainContent;
+      currentSection = 'Main Content';
+    } else {
+      currentSectionElement = document.body;
+      currentSection = 'Page Content';
+    }
+  }
+  
+  // Extract content from the current section
+  const sectionContent = extractSectionText(currentSectionElement);
+  
+  const result = {
+    sectionTitle: currentSection,
+    sectionElement: currentSectionElement.tagName,
+    content: sectionContent,
+    wordCount: sectionContent.split(' ').length,
+    scrollPosition: scrollY,
+    viewportCenter: centerY
+  };
+  
+  console.log(`[Sherpa] Section content extracted:`, result);
+  return result;
+}
+
+// Helper function to extract text content from a section
+function extractSectionText(element) {
+  let text = '';
+  
+  // Get all text nodes and elements within the section
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+    {
+      acceptNode: function(node) {
+        // Skip script, style, and other non-content elements
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const tagName = node.tagName.toLowerCase();
+          if (['script', 'style', 'nav', 'footer', 'header', 'aside'].includes(tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    }
+  );
+  
+  let node;
+  while (node = walker.nextNode()) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const textContent = node.textContent.trim();
+      if (textContent && textContent.length > 2) {
+        text += textContent + ' ';
+      }
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toLowerCase();
+      // Add line breaks for block elements
+      if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'br'].includes(tagName)) {
+        text += '\n';
+      }
+    }
+  }
+  
+  // Clean up the text
+  return text
+    .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+    .replace(/\n\s*\n/g, '\n')  // Replace multiple newlines with single newline
+    .trim();
 }
 // Add message listener to also send page structure for backend session
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

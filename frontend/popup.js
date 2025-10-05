@@ -329,6 +329,14 @@ function ensureVoiceUI() {
   explainImagesBtn.className = 'primary-button flex-button';
   explainImagesBtn.setAttribute('aria-label', 'Explain images in viewport');
   explainImagesBtn.style.textTransform = 'uppercase';
+
+  // Section Summary button
+  const sectionSummaryBtn = document.createElement('button');
+  sectionSummaryBtn.id = 'sectionSummaryBtn';
+  sectionSummaryBtn.textContent = '📄 Section Summary';
+  sectionSummaryBtn.className = 'primary-button flex-button';
+  sectionSummaryBtn.setAttribute('aria-label', 'Generate summary of current section');
+  sectionSummaryBtn.style.textTransform = 'uppercase';
   explainImagesBtn.style.letterSpacing = '0.5px';
 
   // Hover effects for explain images button
@@ -374,6 +382,7 @@ function ensureVoiceUI() {
   submitBtn.addEventListener('click', handleCommand);
   recordBtn.addEventListener('click', handleRecordToggle);
   explainImagesBtn.addEventListener('click', handleExplainImages);
+  sectionSummaryBtn.addEventListener('click', generateSectionSummary);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
@@ -383,6 +392,7 @@ function ensureVoiceUI() {
   // Add buttons to button container
   buttonContainer.appendChild(recordBtn);
   buttonContainer.appendChild(explainImagesBtn);
+  buttonContainer.appendChild(sectionSummaryBtn);
   buttonContainer.appendChild(submitBtn);
 
   voiceSection.appendChild(header);
@@ -658,6 +668,139 @@ Based on the filename, alt text, and context, provide a helpful description of w
   }
 }
 
+// ===== Section Summary Function =====
+async function generateSectionSummary() {
+  try {
+    console.log('📄 Generating section summary...');
+    
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🔄 Analyzing current section...';
+    }
+    
+    // Get the current tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Send message to content script to extract current section
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      command: 'extract_current_section'
+    });
+    
+    if (response?.ok && response.sectionContent) {
+      const sectionData = response.sectionContent;
+      console.log('📊 SECTION CONTENT EXTRACTED:', sectionData);
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = `📄 Analyzing section: "${sectionData.sectionTitle}" (${sectionData.wordCount} words)...`;
+      }
+      
+      // Create a simple summary using the existing navigation endpoint
+      // We'll use a trick: ask for "read section" which should work with the existing endpoint
+      const sectionPrompt = `read section "${sectionData.sectionTitle}"`;
+      
+      try {
+        // Use existing navigation endpoint with a "read section" command
+        const interpretation = await interpretCommand(sectionPrompt);
+        
+        if (interpretation && interpretation.tts_text) {
+          if (voiceDisplay) {
+            voiceDisplay.textContent = `📄 Section Summary: "${sectionData.sectionTitle}"\n\n${interpretation.tts_text}`;
+          }
+          
+          // Use TTS to read the section summary
+          chrome.runtime.sendMessage({
+            type: 'speak_text',
+            text: interpretation.tts_text
+          });
+          
+          console.log('📄 Section summary generated:', interpretation.tts_text);
+        } else {
+          // Fallback: create a simple summary from the content
+          const simpleSummary = createSimpleSummary(sectionData);
+          if (voiceDisplay) {
+            voiceDisplay.textContent = `📄 Section Summary: "${sectionData.sectionTitle}"\n\n${simpleSummary}`;
+          }
+          
+          chrome.runtime.sendMessage({
+            type: 'speak_text',
+            text: simpleSummary
+          });
+        }
+      } catch (error) {
+        console.error('Error with navigation endpoint, using fallback:', error);
+        // Fallback: create a simple summary from the content
+        const simpleSummary = createSimpleSummary(sectionData);
+        if (voiceDisplay) {
+          voiceDisplay.textContent = `📄 Section Summary: "${sectionData.sectionTitle}"\n\n${simpleSummary}`;
+        }
+        
+        chrome.runtime.sendMessage({
+          type: 'speak_text',
+          text: simpleSummary
+        });
+      }
+      
+    } else {
+      console.log('❌ No section content found');
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '❌ No section content found.';
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error generating section summary:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    }
+  }
+}
+
+// ===== Simple Summary Fallback Function =====
+function createSimpleSummary(sectionData) {
+  const { sectionTitle, content, wordCount } = sectionData;
+  
+  if (wordCount <= 5) {
+    return `This section is titled "${sectionTitle}" but contains very little content. It appears to be a heading or navigation element.`;
+  }
+  
+  // Extract first few sentences or key phrases
+  const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 10);
+  const firstSentence = sentences[0]?.trim() || content.substring(0, 100);
+  
+  return `This section is about "${sectionTitle}". ${firstSentence}${firstSentence.length < content.length ? '...' : ''}`;
+}
+
+// ===== General Q&A Function =====
+async function askGeneralQuestion(question, context = null, pageTitle = null, pageUrl = null) {
+  try {
+    console.log('🤖 Asking general question:', question);
+    
+    const response = await fetch(`${BACKEND_BASE}/v1/ask`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        question: question,
+        context: context,
+        page_title: pageTitle,
+        page_url: pageUrl
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('🤖 General question response:', result);
+    return result;
+
+  } catch (error) {
+    console.error('❌ Error asking general question:', error);
+    throw error;
+  }
+}
+
 // Process interpretation result (reusable for both text and voice commands)
 async function processInterpretation(interpretation, originalCommand = null) {
   if (!voiceDisplay) {
@@ -682,6 +825,12 @@ async function processInterpretation(interpretation, originalCommand = null) {
       await navigateToSection(interpretation.target_section_id);
 
       voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
+      
+      // Auto-generate section summary after navigation
+      setTimeout(async () => {
+        console.log('🔄 Auto-generating section summary after navigation...');
+        await generateSectionSummary();
+      }, 1500); // Wait 1.5 seconds for navigation to complete
     } else if (interpretation.intent === 'LIST_SECTIONS') {
       voiceDisplay.textContent += '\n📋 Available sections:\n';
       if (pageStructureData && pageStructureData.sections) {
