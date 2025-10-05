@@ -3,6 +3,7 @@ Business logic for Sherpa API
 """
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 import uuid
@@ -286,7 +287,8 @@ class ImmersiveSummaryService:
     """Service for generating immersive summary"""
 
     @staticmethod
-    async def generate_immersive_summary_transcript(
+    def generate_immersive_summary_transcript(
+        session_id: str,
         page_url: str,
         page_title: str,
         context: Optional[str] = None,
@@ -306,46 +308,41 @@ class ImmersiveSummaryService:
 You are an *audio narrator and sensory writer* tasked with generating an *immersive transcript* for a visually-impaired listener. Your goal is to capture **not just what the page says**, but also **how it feels** — tone, layout, imagery, and flow — so the listener experiences the emotional and structural essence of the webpage as if seeing it.
 
 **Input:**
-Page URL: {page_url}
-Page Title: {page_title}
+- Page URL: {page_url}
+- Page Title: {page_title}
+- Page Section Map: {sessions.get(session_id, {}).get("section_map") or MOCK_SECTION_MAP}
 
-**Instruction:**
-Generate a *spoken-style transcript* (not a plain summary) that follows this structure:
+**Instructions:**
+Based on the provided section map, split the immersive summary into distinct sections. For each section, generate a *spoken-style transcript* (not a plain summary) that includes:
 
-1. 🎬 **Opening Scene (Orientation)**
+1. **Section Title and Timestamp**
+   - Start each section with its title and a timestamp (e.g., "[00:00] Main article").
+   - The timestamp should reflect the approximate start time of the section in the overall narration.
 
-   * Announce the title and site name.
-   * Give a brief visual orientation (e.g., “The article opens with a large header against a dark background”).
-   * Mention any prominent image or color tone that defines the page’s first impression.
+2. **Section Content**
+   - Describe the content, layout, and emotional tone of the section.
+   - Read key sentences naturally, summarizing paragraphs concisely.
+   - Insert gentle transitions between sections (“Next, the article shifts focus to…”).
+   - When encountering an image, describe it vividly but succinctly (“A photo of three students holding signs, smiling under the sunlight”).
+   - Maintain rhythm, tone, and pacing consistent with the sentiment of each section (e.g., calm, urgent, celebratory).
 
-2. 📖 **Narrative Flow (Content)**
+3. **Visual and Emotional Context**
+   - Convey color, typography, or layout as emotional cues, not raw data.
+   - Example: “The next section, written in bold white letters over a deep blue background, gives a sense of quiet determination.”
+   - For pull quotes or asides, use expressive narration: “In a highlighted note to the side, the author writes…”
 
-   * Move through the article in the same order a sighted reader would scan.
-   * Read key sentences naturally, summarizing paragraphs concisely.
-   * Insert gentle transitions between sections (“Next, the article shifts focus to…”).
-   * When encountering an image, describe it vividly but succinctly (“A photo of three students holding signs, smiling under the sunlight”).
-   * Maintain rhythm, tone, and pacing consistent with the sentiment of each section (e.g., calm, urgent, celebratory).
-
-3. 🪄 **Visual and Emotional Context**
-
-   * Convey color, typography, or layout as emotional cues, not raw data.
-   * Example: “The next section, written in bold white letters over a deep blue background, gives a sense of quiet determination.”
-   * For pull quotes or asides, use expressive narration: “In a highlighted note to the side, the author writes…”
-
-4. 🔚 **Closure**
-
-   * End with a short reflection that feels like the visual “bottom” of the page.
-   * Mention footers or author credits naturally (“At the end, the article credits journalist Alex Kim, writing for The Atlantic.”).
-   * Close with a gentle sign-off cue (“End of immersive summary.”).
+4. **Closure**
+   - End with a short reflection that feels like the visual “bottom” of the page.
+   - Mention footers or author credits naturally (“At the end, the article credits journalist Alex Kim, writing for The Atlantic.”).
+   - Close with a gentle sign-off cue (“End of immersive summary.”).
 
 **Style Requirements:**
-
-* Keep it under 5 minutes when read aloud (~500–700 words).
-* Use conversational pacing, not robotic summarization.
-* Include the timestamp of each section in the summary.
-* Prioritize sensory verbs: *see, feel, stand, hover, glow, flow, stretch, rise*.
-* Avoid data or URLs unless crucial for meaning.
-* Use accessible language: vivid yet clear.
+- Keep the total transcript under 5 minutes when read aloud (~500–700 words).
+- Use conversational pacing, not robotic summarization.
+- Include the timestamp of each section in the summary.
+- Prioritize sensory verbs: *see, feel, stand, hover, glow, flow, stretch, rise*.
+- Avoid data or URLs unless crucial for meaning.
+- Use accessible language: vivid yet clear.
         """
 
         try:
@@ -371,7 +368,7 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
             )
 
     @staticmethod
-    async def generate_immersive_summary_audio(
+    def generate_immersive_summary_audio(
         transcript: str,
         output_filepath: str,
     ) -> bytes:
@@ -402,8 +399,9 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
         logger.info("Immersive summary audio generated successfully")
         return data
 
-    async def generate_immersive_summary_audio_job(
+    def generate_immersive_summary_audio_job(
         job_id: str,
+        session_id: str,
         page_url: str,
         page_title: str,
         context: Optional[str] = None,
@@ -412,29 +410,33 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
         Generate an immersive summary of the page.
         """
         jobs[job_id] = {
+            "session_id": session_id,
             "page_url": page_url,
             "page_title": page_title,
             "context": context,
             "status": "pending",
         }
-        result = await ImmersiveSummaryService.generate_immersive_summary_transcript(
+        result = ImmersiveSummaryService.generate_immersive_summary_transcript(
+            session_id=session_id,
             page_url=page_url,
             page_title=page_title,
             context=context,
         )
-        await ImmersiveSummaryService.generate_immersive_summary_audio(
+        ImmersiveSummaryService.generate_immersive_summary_audio(
             transcript=result.transcript,
             output_filepath=f"{job_id}.wav",
         )
         jobs[job_id]["status"] = "completed"
         logger.info("Immersive summary audio job completed")
 
-    async def get_immersive_summary_audio(job_id: str) -> bytes:
+    def get_immersive_summary_audio(job_id: str) -> bytes:
         """
         Get the immersive summary audio.
         """
-        # if job_id not in jobs:
-        #     raise ValueError("Job not found")
-        # if jobs[job_id]["status"] != "completed":
-        #     raise ValueError("Job not completed")
+        if job_id not in jobs:
+            raise ValueError("Job not found")
+        if jobs[job_id]["status"] != "completed":
+            raise ValueError("Job not completed")
+        if not os.path.exists(f"{job_id}.wav"):
+            raise ValueError("File not found")
         return open(f"{job_id}.wav", "rb").read()

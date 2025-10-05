@@ -169,7 +169,7 @@ async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionRespon
     summary="Generate an immersive summary of the page",
     description="Generate an immersive summary of the page.",
 )
-async def generate_immersive_summary(
+def generate_immersive_summary(
     request: ImmersiveSummaryRequest,
     tasks: BackgroundTasks,
 ) -> ImmersiveSummaryResponse:
@@ -180,6 +180,7 @@ async def generate_immersive_summary(
     tasks.add_task(
         ImmersiveSummaryService.generate_immersive_summary_audio_job,
         job_id=job_id,
+        session_id=request.session_id,
         page_url=request.page_url,
         page_title=request.page_title,
         context=request.context,

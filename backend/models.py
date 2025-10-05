@@ -101,6 +101,7 @@ class GeneralQuestionResponse(BaseModel):
 class ImmersiveSummaryRequest(BaseModel):
     """Request model for immersive summary"""
 
+    session_id: str = Field(..., description="Session ID for the immersive summary")
     page_url: str = Field(..., description="URL of the current page")
     page_title: str = Field(..., description="Title of the current page")
     context: Optional[str] = Field(
@@ -119,3 +120,7 @@ class ImmersiveSummaryTranscriptResponse(BaseModel):
 
     transcript: str = Field(..., description="Transcript of the immersive summary")
     error: Optional[str] = Field(None, description="Error message if the job failed")
+    playback_time: Optional[dict[str, str]] = Field(
+        None,
+        description="Playback time of the transcript. For example: {'Main article': '00:00', 'Comments': '00:00', ...}",
+    )
