@@ -1,8 +1,8 @@
 // popup.js — Project Sherpa
 
 // ---- Config ----
-// const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
-const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
+const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+// const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
 const analyzeBtn = document.getElementById('analyzeBtn');
