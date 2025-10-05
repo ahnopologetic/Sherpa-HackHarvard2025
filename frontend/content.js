@@ -462,4 +462,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ ok: false, error: error.message });
     }
   }
+  
+  // Play notification sound
+  if (request.command === 'play_notification_sound') {
+    try {
+      const audio = new Audio(chrome.runtime.getURL('assets/notification-291227.mp3'));
+      audio.play().catch(err => {
+        console.log('[Sherpa] Could not play notification sound:', err);
+      });
+      sendResponse({ ok: true });
+      return true;
+    } catch (error) {
+      console.error('[Sherpa] Error playing notification sound:', error);
+      sendResponse({ ok: false, error: error.message });
+    }
+  }
 });

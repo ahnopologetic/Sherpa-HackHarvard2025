@@ -26,15 +26,36 @@ let analyzeTimeoutId = null;
 let currentSessionId = null;
 let pageStructureData = null;
 let isRecording = false;
+let pendingAutoSummary = null; // Store summary that needs to be played when popup opens
 
 // ---- Audio ----
 let loadingSound = null;
 let loadingSoundInterval = null;
+let notificationSound = null;
 
 function initLoadingSound() {
   if (!loadingSound) {
     loadingSound = new Audio('assets/viscous-liquid-fall-in-83980.mp3');
     loadingSound.loop = false; // Don't use native loop, we'll use setInterval
+  }
+}
+
+function initNotificationSound() {
+  if (!notificationSound) {
+    notificationSound = new Audio('assets/notification-291227.mp3');
+    notificationSound.loop = false;
+  }
+}
+
+function playNotificationSound() {
+  try {
+    initNotificationSound();
+    notificationSound.currentTime = 0;
+    notificationSound.play().catch(err => {
+      console.log('Could not play notification sound:', err);
+    });
+  } catch (error) {
+    console.log('Error initializing notification sound:', error);
   }
 }
 
@@ -1055,9 +1076,15 @@ function showSpeaking() {
   buttonText && (buttonText.textContent = 'Speaking…');
 }
 
-function showSuccess() {
+function showSuccess(skipNotificationSound = false) {
   hideAllIndicators();
   stopLoadingSound(); // Stop sound when loading completes
+  
+  // Only play notification sound if not skipped (for auto-triggered analysis)
+  if (!skipNotificationSound) {
+    playNotificationSound(); // Play notification sound on completion
+  }
+  
   successIndicator && successIndicator.classList.remove('hidden');
   buttonText && (buttonText.textContent = 'Analyze Page Structure');
   if (analyzeBtn) {
@@ -1208,7 +1235,9 @@ chrome.runtime.onMessage.addListener(async (message) => {
   if (message.type === 'analysis_complete') {
     isAnalyzing = false;
     clearAnalyzeTimeout();
-    showSuccess();
+    
+    // Skip notification sound in showSuccess if auto-triggered (background already played it)
+    showSuccess(message.autoTriggered);
 
     ensureSummaryUI();
     summaryText.value = message.summary || '';
@@ -1225,6 +1254,30 @@ chrome.runtime.onMessage.addListener(async (message) => {
       pageStructureData = message.pageStructure;
     }
 
+    // If this was auto-triggered and popup is visible, play TTS immediately
+    if (message.autoTriggered) {
+      // Popup is already open, so play TTS now
+      if (currentSummary && message.langHint) {
+        console.log('[Sherpa] Playing TTS for auto-analysis (popup is open)');
+        chrome.runtime.sendMessage({
+          type: 'speak_text',
+          text: currentSummary,
+          langHint: message.langHint
+        }).catch(err => {
+          console.error('TTS error:', err);
+        });
+      }
+      // Clear any pending summary since we just played it
+      pendingAutoSummary = null;
+    }
+
+    return;
+  }
+
+  // Handle auto-analysis notification
+  if (message.type === 'auto_analysis_triggered') {
+    console.log('[Sherpa] Auto-analysis triggered for:', message.url);
+    announceToScreenReader('Page analysis started automatically', 'polite');
     return;
   }
 
