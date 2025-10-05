@@ -3,8 +3,11 @@ Sherpa API - FastAPI application for voice-controlled web navigation
 """
 
 import logging
+import os
+import uuid
 
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     HTTPException,
     File,
@@ -16,18 +19,27 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
+from fastapi.responses import FileResponse
+
 from models import (
     CreateSessionRequest,
     CreateSessionResponse,
+    ImmersiveSummaryRequest,
+    ImmersiveSummaryResponse,
     InterpretResponse,
     GeneralQuestionRequest,
     GeneralQuestionResponse,
 )
-from services import SessionService, InterpretService, GeneralQuestionService
+from services import (
+    ImmersiveSummaryService,
+    SessionService,
+    InterpretService,
+    GeneralQuestionService,
+)
 from config import settings
 
 # Initialize FastAPI app
-logger = logging.getLogger('uvicorn.error')
+logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)
 
 app = FastAPI(
@@ -142,7 +154,7 @@ async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionRespon
             question=request.question,
             context=request.context,
             page_title=request.page_title,
-            page_url=request.page_url
+            page_url=request.page_url,
         )
 
         return GeneralQuestionResponse(**result)
@@ -150,6 +162,49 @@ async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionRespon
     except Exception as e:
         logger.error(f"General question endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/v1/immersive-summary",
+    summary="Generate an immersive summary of the page",
+    description="Generate an immersive summary of the page.",
+)
+async def generate_immersive_summary(
+    request: ImmersiveSummaryRequest,
+    tasks: BackgroundTasks,
+) -> ImmersiveSummaryResponse:
+    """
+    Generate an immersive summary of the page.
+    """
+    job_id = str(uuid.uuid4())
+    tasks.add_task(
+        ImmersiveSummaryService.generate_immersive_summary_audio_job,
+        job_id=job_id,
+        page_url=request.page_url,
+        page_title=request.page_title,
+        context=request.context,
+    )
+    return ImmersiveSummaryResponse(
+        job_id=job_id,
+    )
+
+
+@app.get(
+    "/v1/immersive-summary/{job_id}",
+    summary="Get the immersive summary audio",
+    description="Get the immersive summary audio.",
+    response_class=FileResponse,
+)
+async def get_immersive_summary_audio(job_id: str):
+    """
+    Get the immersive summary audio as a WAV file.
+    """
+    file_path = f"{job_id}.wav"
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(
+        path=file_path, media_type="audio/wav", filename=f"{job_id}.wav"
+    )
 
 
 @app.get("/health")
