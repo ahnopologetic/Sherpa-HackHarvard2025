@@ -1,8 +1,8 @@
 // popup.js — Project Sherpa
 
 // ---- Config ----
-const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
-// const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
+// const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
 const analyzeBtn = document.getElementById('analyzeBtn');
@@ -519,7 +519,12 @@ function ensureSummaryUI() {
 }
 
 // ---- Voice Command UI (Text Input Version) ----
-let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn;
+let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn, createImmersiveSummaryBtn;
+let immersiveSummaryAudio = null; // Store the audio element for playback
+let currentJobId = null; // Store the current job ID for polling
+let pollingInterval = null; // Store the polling interval
+let immersivePlaybackTimes = []; // Store section playback times for syncing
+let currentSectionIndex = 0; // Track which section we're currently in
 
 function ensureVoiceUI() {
   if (voiceSection) return;
@@ -600,6 +605,41 @@ function ensureVoiceUI() {
   buttonContainer.style.justifyContent = 'space-evenly';
   buttonContainer.style.alignItems = 'stretch';
   buttonContainer.style.flexWrap = 'wrap';
+
+  // Immersive Summary button (FULL WIDTH - TOP OF ALL BUTTONS)
+  createImmersiveSummaryBtn = document.createElement('button');
+  createImmersiveSummaryBtn.id = 'createImmersiveSummaryBtn';
+  createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">🎧</span> Create Immersive Summary';
+  createImmersiveSummaryBtn.className = 'primary-button';
+  createImmersiveSummaryBtn.setAttribute('aria-label', 'Create immersive audio summary of the page');
+  createImmersiveSummaryBtn.style.width = '100%';
+  createImmersiveSummaryBtn.style.padding = '14px 24px';
+  createImmersiveSummaryBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+  createImmersiveSummaryBtn.style.color = 'white';
+  createImmersiveSummaryBtn.style.border = 'none';
+  createImmersiveSummaryBtn.style.borderRadius = '8px';
+  createImmersiveSummaryBtn.style.cursor = 'pointer';
+  createImmersiveSummaryBtn.style.fontWeight = '700';
+  createImmersiveSummaryBtn.style.fontSize = '16px';
+  createImmersiveSummaryBtn.style.transition = 'all 0.2s ease';
+  createImmersiveSummaryBtn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+  createImmersiveSummaryBtn.style.textTransform = 'uppercase';
+  createImmersiveSummaryBtn.style.letterSpacing = '0.5px';
+  createImmersiveSummaryBtn.style.marginBottom = '8px';
+
+  // Hover effects
+  createImmersiveSummaryBtn.addEventListener('mouseenter', () => {
+    if (!createImmersiveSummaryBtn.disabled) {
+      createImmersiveSummaryBtn.style.transform = 'translateY(-2px) scale(1.02)';
+      createImmersiveSummaryBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+    }
+  });
+  createImmersiveSummaryBtn.addEventListener('mouseleave', () => {
+    if (!createImmersiveSummaryBtn.disabled) {
+      createImmersiveSummaryBtn.style.transform = 'translateY(0) scale(1)';
+      createImmersiveSummaryBtn.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.3)';
+    }
+  });
 
   // Record button
   recordBtn = document.createElement('button');
@@ -714,6 +754,7 @@ function ensureVoiceUI() {
   recordBtn.addEventListener('click', handleRecordToggle);
   explainImagesBtn.addEventListener('click', handleExplainImages);
   sectionSummaryBtn.addEventListener('click', generateSectionSummary);
+  createImmersiveSummaryBtn.addEventListener('click', handleCreateImmersiveSummary);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
@@ -730,10 +771,388 @@ function ensureVoiceUI() {
   voiceSection.appendChild(quickNavContainer); // Add quick nav before input
   voiceSection.appendChild(inputHelp);
   voiceSection.appendChild(textInput);
+  voiceSection.appendChild(createImmersiveSummaryBtn); // Add immersive summary button on top
   voiceSection.appendChild(buttonContainer); // Add button container instead of individual buttons
   voiceSection.appendChild(voiceDisplay);
 
   main.appendChild(voiceSection);
+}
+
+// ---- Immersive Summary Helper Functions ----
+function parseTimeToSeconds(timeString) {
+  /**
+   * Parse time string (MM:SS or HH:MM:SS) to seconds
+   * Examples: "01:30" -> 90, "00:00:45" -> 45
+   */
+  if (!timeString) return 0;
+  
+  const parts = timeString.split(':').map(p => parseInt(p, 10));
+  
+  if (parts.length === 2) {
+    // MM:SS format
+    return parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    // HH:MM:SS format
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  
+  return 0;
+}
+
+function findMatchingSectionId(sectionName) {
+  /**
+   * Find section ID from page structure that matches the section name
+   */
+  if (!pageStructureData || !pageStructureData.sections) {
+    return null;
+  }
+  
+  // Try to find exact match first
+  const exactMatch = pageStructureData.sections.find(
+    section => section.label.toLowerCase() === sectionName.toLowerCase()
+  );
+  
+  if (exactMatch) {
+    return exactMatch.id;
+  }
+  
+  // Try partial match
+  const partialMatch = pageStructureData.sections.find(
+    section => section.label.toLowerCase().includes(sectionName.toLowerCase()) ||
+                sectionName.toLowerCase().includes(section.label.toLowerCase())
+  );
+  
+  if (partialMatch) {
+    return partialMatch.id;
+  }
+  
+  return null;
+}
+
+function handleAudioTimeUpdate() {
+  /**
+   * Handle audio time updates to sync section navigation
+   */
+  if (!immersiveSummaryAudio || immersivePlaybackTimes.length === 0) {
+    return;
+  }
+  
+  const currentTime = immersiveSummaryAudio.currentTime;
+  
+  // Check if we've crossed into a new section
+  for (let i = currentSectionIndex; i < immersivePlaybackTimes.length; i++) {
+    const section = immersivePlaybackTimes[i];
+    
+    // If we're past this section's start time and before the next section (or at the end)
+    const nextSection = immersivePlaybackTimes[i + 1];
+    const inThisSection = currentTime >= section.time && 
+                          (!nextSection || currentTime < nextSection.time);
+    
+    if (inThisSection && i !== currentSectionIndex) {
+      currentSectionIndex = i;
+      
+      console.log(`🎵 Audio at ${currentTime.toFixed(1)}s -> Navigating to section: ${section.name}`);
+      
+      // Navigate to the section if we have a valid section ID
+      if (section.sectionId) {
+        navigateToSection(section.sectionId).catch(err => {
+          console.warn('Could not navigate to section:', err);
+        });
+        
+        // Update voice display to show current section
+        if (voiceDisplay) {
+          voiceDisplay.textContent = `▶️ Playing: ${section.name}`;
+        }
+      }
+      
+      break;
+    }
+  }
+}
+
+// ---- Immersive Summary Functions ----
+async function handleCreateImmersiveSummary() {
+  try {
+    if (!currentSessionId) {
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '❌ Please analyze the page first before creating an immersive summary.';
+      }
+      return;
+    }
+
+    // Get current tab info
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) {
+      throw new Error('No active tab found');
+    }
+
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🎧 Creating immersive summary job...';
+    }
+
+    // Make POST request to start the job
+    const response = await fetch(`${BACKEND_BASE}/v1/immersive-summary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        session_id: currentSessionId,
+        page_url: tab.url,
+        page_title: tab.title,
+        context: pageStructureData ? JSON.stringify(pageStructureData) : null
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create immersive summary: ${response.status}`);
+    }
+
+    const result = await response.json();
+    currentJobId = result.job_id;
+
+    console.log('🎧 Immersive summary job started:', currentJobId);
+    
+    // Update button to show it's processing with spinner
+    setImmersiveSummaryButtonState('loading');
+    
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🎧 Job started! Generating immersive audio summary... This may take 1-2 minutes.';
+    }
+
+    announceToScreenReader('Immersive summary generation started', 'polite');
+
+    // Start polling for the job result
+    startPollingForImmersiveSummary(currentJobId);
+
+  } catch (error) {
+    console.error('❌ Error creating immersive summary:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    }
+    setImmersiveSummaryButtonState('error');
+  }
+}
+
+function startPollingForImmersiveSummary(jobId) {
+  // Clear any existing polling interval
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+
+  let pollCount = 0;
+  const maxPolls = 60; // Poll for up to 60 attempts (5 minutes at 5 second intervals)
+
+  pollingInterval = setInterval(async () => {
+    pollCount++;
+    
+    try {
+      console.log(`🔄 Polling attempt ${pollCount} for job ${jobId}`);
+      
+      const response = await fetch(`${BACKEND_BASE}/v1/immersive-summary/${jobId}`);
+      
+      if (response.ok) {
+        // Job is complete! Download the audio
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+        
+        console.log('✅ Immersive summary audio ready!');
+        
+        // Download the audio as a blob
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Store the audio for playback
+        immersiveSummaryAudio = new Audio(audioUrl);
+        
+        // Fetch transcript data with playback times
+        try {
+          const transcriptResponse = await fetch(`${BACKEND_BASE}/v1/immersive-summary/${jobId}/transcript`);
+          if (transcriptResponse.ok) {
+            const transcriptData = await transcriptResponse.json();
+            console.log('📝 Transcript data:', transcriptData);
+            
+            // Parse and store playback times
+            if (transcriptData.playback_time && Array.isArray(transcriptData.playback_time)) {
+              immersivePlaybackTimes = transcriptData.playback_time.map(item => ({
+                name: item.name,
+                time: parseTimeToSeconds(item.playback_time),
+                sectionId: findMatchingSectionId(item.name)
+              }));
+              
+              // Sort by time to ensure correct order
+              immersivePlaybackTimes.sort((a, b) => a.time - b.time);
+              
+              console.log('⏱️ Parsed playback times:', immersivePlaybackTimes);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch transcript data:', error);
+        }
+        
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '✅ Immersive summary ready! Click play to listen.';
+        }
+        
+        // Change button to done state with play button
+        setImmersiveSummaryButtonState('done');
+        
+        announceToScreenReader('Immersive summary audio is ready to play', 'polite');
+        
+      } else if (response.status === 404) {
+        // Job still processing, continue polling
+        console.log('⏳ Job still processing...');
+        
+        // Update progress message every 10 seconds (every 2nd poll)
+        if (pollCount % 2 === 0 && voiceDisplay) {
+          const elapsed = pollCount * 5; // seconds elapsed
+          voiceDisplay.textContent = `🎧 Still generating... (${elapsed}s elapsed)`;
+        }
+      } else {
+        // Error occurred
+        throw new Error(`Polling failed with status: ${response.status}`);
+      }
+      
+      // Stop polling after max attempts
+      if (pollCount >= maxPolls) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+        throw new Error('Immersive summary generation timed out');
+      }
+      
+    } catch (error) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+      
+      console.error('❌ Polling error:', error);
+      if (voiceDisplay) {
+        voiceDisplay.textContent = `❌ Error: ${error.message}`;
+      }
+      setImmersiveSummaryButtonState('error');
+    }
+  }, 5000); // Poll every 5 seconds
+}
+
+function setImmersiveSummaryButtonState(state) {
+  if (!createImmersiveSummaryBtn) return;
+
+  switch (state) {
+    case 'loading':
+      createImmersiveSummaryBtn.disabled = true;
+      // Create spinner element
+      const spinnerHTML = `
+        <div style="display: inline-flex; align-items: center; gap: 10px;">
+          <div class="spinner" style="
+            width: 16px;
+            height: 16px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          " aria-hidden="true"></div>
+          <span>Generating Immersive Summary...</span>
+        </div>
+      `;
+      createImmersiveSummaryBtn.innerHTML = spinnerHTML;
+      createImmersiveSummaryBtn.style.opacity = '0.9';
+      createImmersiveSummaryBtn.style.cursor = 'not-allowed';
+      createImmersiveSummaryBtn.setAttribute('aria-busy', 'true');
+      createImmersiveSummaryBtn.setAttribute('aria-label', 'Generating immersive summary, please wait');
+      playLoadingSound();
+      break;
+      
+    case 'done':
+      createImmersiveSummaryBtn.disabled = false;
+      createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">▶️</span> Play Immersive Summary';
+      createImmersiveSummaryBtn.style.opacity = '1';
+      createImmersiveSummaryBtn.style.cursor = 'pointer';
+      createImmersiveSummaryBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      createImmersiveSummaryBtn.setAttribute('aria-busy', 'false');
+      createImmersiveSummaryBtn.setAttribute('aria-label', 'Play immersive audio summary');
+      
+      // Change click handler to play audio
+      createImmersiveSummaryBtn.removeEventListener('click', handleCreateImmersiveSummary);
+      createImmersiveSummaryBtn.addEventListener('click', playImmersiveSummary);
+      
+      stopLoadingSound();
+      playNotificationSound();
+      break;
+      
+    case 'error':
+      createImmersiveSummaryBtn.disabled = false;
+      createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">🎧</span> Create Immersive Summary';
+      createImmersiveSummaryBtn.style.opacity = '1';
+      createImmersiveSummaryBtn.style.cursor = 'pointer';
+      createImmersiveSummaryBtn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+      createImmersiveSummaryBtn.setAttribute('aria-busy', 'false');
+      stopLoadingSound();
+      break;
+      
+    default:
+      break;
+  }
+}
+
+function playImmersiveSummary() {
+  if (!immersiveSummaryAudio) {
+    console.error('No immersive summary audio available');
+    return;
+  }
+
+  try {
+    if (immersiveSummaryAudio.paused) {
+      // Reset section index when starting from beginning
+      if (immersiveSummaryAudio.currentTime === 0) {
+        currentSectionIndex = 0;
+      }
+      
+      // Add timeupdate listener for section syncing
+      immersiveSummaryAudio.addEventListener('timeupdate', handleAudioTimeUpdate);
+      
+      immersiveSummaryAudio.play();
+      createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">⏸️</span> Pause Immersive Summary';
+      createImmersiveSummaryBtn.setAttribute('aria-label', 'Pause immersive audio summary');
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '▶️ Playing immersive summary...';
+      }
+      
+      announceToScreenReader('Playing immersive summary with auto-navigation', 'polite');
+      
+      // Add event listener for when audio ends
+      immersiveSummaryAudio.onended = () => {
+        createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">🔄</span> Replay Immersive Summary';
+        createImmersiveSummaryBtn.setAttribute('aria-label', 'Replay immersive audio summary');
+        
+        // Remove timeupdate listener
+        immersiveSummaryAudio.removeEventListener('timeupdate', handleAudioTimeUpdate);
+        
+        // Reset section index
+        currentSectionIndex = 0;
+        
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '✅ Immersive summary finished playing.';
+        }
+        
+        announceToScreenReader('Immersive summary finished', 'polite');
+      };
+    } else {
+      immersiveSummaryAudio.pause();
+      createImmersiveSummaryBtn.innerHTML = '<span aria-hidden="true">▶️</span> Play Immersive Summary';
+      createImmersiveSummaryBtn.setAttribute('aria-label', 'Play immersive audio summary');
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '⏸️ Immersive summary paused.';
+      }
+      
+      announceToScreenReader('Immersive summary paused', 'polite');
+    }
+  } catch (error) {
+    console.error('Error playing immersive summary:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Error playing audio: ${error.message}`;
+    }
+  }
 }
 
 // ---- Quick Navigation Suggestions ----
@@ -1575,15 +1994,45 @@ function stopFeatureRotator() {
   }
 }
 
-// ---- Stop TTS when popup closes ----
+// ---- Stop TTS and cleanup when popup closes ----
 window.addEventListener('beforeunload', () => {
-  console.log('[Sherpa] Popup closing - stopping TTS');
+  console.log('[Sherpa] Popup closing - stopping TTS and cleaning up');
   chrome.runtime.sendMessage({ type: 'stop_tts' }).catch(() => {});
+  
+  // Clear polling interval if active
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  
+  // Stop immersive summary audio if playing
+  if (immersiveSummaryAudio) {
+    if (!immersiveSummaryAudio.paused) {
+      immersiveSummaryAudio.pause();
+    }
+    // Remove event listener
+    immersiveSummaryAudio.removeEventListener('timeupdate', handleAudioTimeUpdate);
+  }
 });
 
 window.addEventListener('unload', () => {
-  console.log('[Sherpa] Popup unloaded - stopping TTS');
+  console.log('[Sherpa] Popup unloaded - stopping TTS and cleaning up');
   chrome.runtime.sendMessage({ type: 'stop_tts' }).catch(() => {});
+  
+  // Clear polling interval if active
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  
+  // Stop immersive summary audio if playing
+  if (immersiveSummaryAudio) {
+    if (!immersiveSummaryAudio.paused) {
+      immersiveSummaryAudio.pause();
+    }
+    // Remove event listener
+    immersiveSummaryAudio.removeEventListener('timeupdate', handleAudioTimeUpdate);
+  }
 });
 
 // ---- Init ----
