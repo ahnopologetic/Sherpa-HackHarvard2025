@@ -263,6 +263,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return true;
     }
+    if (msg?.command === 'extract_viewport_images') {
+      const viewportImages = extractViewportImages();
+      sendResponse({ ok: true, ...viewportImages });
+      return true;
+    }
   } catch (e) {
     console.error('[Sherpa] content error:', e);
     sendResponse({ ok: false, error: e.message });
@@ -271,6 +276,175 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   
   // Log successful injection
   console.log('Project Sherpa content script loaded');
+
+// ===== Viewport Image Extraction Function =====
+function extractViewportImages() {
+  console.log('[Sherpa] ===== STARTING VIEWPORT IMAGE EXTRACTION =====');
+  
+  // Get viewport dimensions
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const scrollPosition = {
+    x: window.scrollX,
+    y: window.scrollY
+  };
+  
+  console.log(`[Sherpa] Viewport: ${viewportWidth}x${viewportHeight}, Scroll: ${scrollPosition.x},${scrollPosition.y}`);
+  
+  const viewportImages = [];
+  const allImages = document.querySelectorAll('img');
+  
+  console.log(`[Sherpa] Found ${allImages.length} total images on page`);
+  
+  allImages.forEach((img, index) => {
+    console.log(`[Sherpa] --- Checking Image ${index + 1} for viewport visibility ---`);
+    
+    // Get image dimensions and position
+    const rect = img.getBoundingClientRect();
+    const imgWidth = rect.width;
+    const imgHeight = rect.height;
+    const imgX = rect.left;
+    const imgY = rect.top;
+    
+    console.log(`[Sherpa] Image ${index + 1} rect:`, rect);
+    
+    // Check if image is in viewport
+    const isInViewport = (
+      imgX < viewportWidth &&
+      imgY < viewportHeight &&
+      imgX + imgWidth > 0 &&
+      imgY + imgHeight > 0
+    );
+    
+    if (!isInViewport) {
+      console.log(`[Sherpa] Image ${index + 1} not in viewport, skipping`);
+      return;
+    }
+    
+    // Calculate visibility percentage
+    const visibleLeft = Math.max(0, imgX);
+    const visibleTop = Math.max(0, imgY);
+    const visibleRight = Math.min(viewportWidth, imgX + imgWidth);
+    const visibleBottom = Math.min(viewportHeight, imgY + imgHeight);
+    
+    const visibleWidth = visibleRight - visibleLeft;
+    const visibleHeight = visibleBottom - visibleTop;
+    const visibleArea = visibleWidth * visibleHeight;
+    const totalArea = imgWidth * imgHeight;
+    const visibilityPercentage = totalArea > 0 ? Math.round((visibleArea / totalArea) * 100) : 0;
+    
+    console.log(`[Sherpa] Image ${index + 1} visibility: ${visibilityPercentage}%`);
+    
+    // Skip very small or barely visible images
+    if (imgWidth < 30 || imgHeight < 30 || visibilityPercentage < 10) {
+      console.log(`[Sherpa] Image ${index + 1} too small or barely visible, skipping`);
+      return;
+    }
+    
+    // Get image source and basic info
+    const src = img.src || img.getAttribute('data-src') || '';
+    const alt = img.alt || '';
+    
+    if (!src || src.includes('data:image') || src.includes('pixel')) {
+      console.log(`[Sherpa] Image ${index + 1} has no meaningful src, skipping`);
+      return;
+    }
+    
+    // Get context information
+    const context = getImageContext(img);
+    const parentElement = img.parentElement?.tagName || '';
+    const section = getImageSection(img);
+    
+    const imageData = {
+      src: src,
+      alt: alt,
+      width: Math.round(imgWidth),
+      height: Math.round(imgHeight),
+      viewportX: Math.round(imgX),
+      viewportY: Math.round(imgY),
+      isVisible: true,
+      visibilityPercentage: visibilityPercentage,
+      context: context,
+      parentElement: parentElement,
+      nearbyText: context,
+      section: section
+    };
+    
+    console.log(`[Sherpa] Image ${index + 1} viewport data:`, imageData);
+    viewportImages.push(imageData);
+  });
+  
+  console.log(`[Sherpa] ===== VIEWPORT IMAGE EXTRACTION COMPLETE =====`);
+  console.log(`[Sherpa] Found ${viewportImages.length} images in viewport`);
+  console.log(`[Sherpa] Viewport images:`, viewportImages);
+  
+  return {
+    images: viewportImages,
+    viewportWidth: viewportWidth,
+    viewportHeight: viewportHeight,
+    scrollPosition: scrollPosition
+  };
+}
+
+// Helper function to get image context
+function getImageContext(img) {
+  let context = '';
+  
+  // Check parent element text
+  const parent = img.parentElement;
+  if (parent) {
+    const parentText = parent.textContent.trim();
+    if (parentText && parentText.length > 10 && parentText.length < 300) {
+      context += parentText + ' ';
+    }
+  }
+  
+  // Check next siblings
+  let sibling = img.nextSibling;
+  let attempts = 0;
+  while (sibling && attempts < 3) {
+    if (sibling.nodeType === Node.TEXT_NODE) {
+      const siblingText = sibling.textContent.trim();
+      if (siblingText && siblingText.length > 5) {
+        context += siblingText + ' ';
+      }
+    } else if (sibling.nodeType === Node.ELEMENT_NODE) {
+      const siblingText = sibling.textContent.trim();
+      if (siblingText && siblingText.length > 5 && siblingText.length < 200) {
+        context += siblingText + ' ';
+      }
+    }
+    sibling = sibling.nextSibling;
+    attempts++;
+  }
+  
+  return context.trim();
+}
+
+// Helper function to get the section/heading context for an image
+function getImageSection(img) {
+  // Look for nearby headings
+  let element = img;
+  let attempts = 0;
+  
+  while (element && attempts < 5) {
+    // Check if current element is a heading
+    if (element.matches('h1, h2, h3, h4, h5, h6')) {
+      return element.textContent.trim();
+    }
+    
+    // Check for headings in the same container
+    const heading = element.querySelector('h1, h2, h3, h4, h5, h6');
+    if (heading) {
+      return heading.textContent.trim();
+    }
+    
+    element = element.parentElement;
+    attempts++;
+  }
+  
+  return '';
+}
 // Add message listener to also send page structure for backend session
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.command === 'get_page_for_backend') {

@@ -140,9 +140,6 @@ async function handleRecordToggle() {
 
 // ---- Summary UI (created on-demand so you DON'T have to edit popup.html) ----
 let summarySection, summaryText, summarySource, summaryModel, copySummaryBtn;
-let playBtn, pauseBtn, replayBtn;
-let currentSummary = ''; // Store the current summary for TTS controls
-let isTTSSpeaking = false;
 
 function ensureSummaryUI() {
   if (summarySection) return;
@@ -200,91 +197,9 @@ function ensureSummaryUI() {
 
   const actions = document.createElement('div');
   actions.style.display = 'flex';
-  actions.style.justifyContent = 'space-between';
-  actions.style.alignItems = 'center';
+  actions.style.justifyContent = 'flex-end';
   actions.style.marginTop = '8px';
-  actions.style.gap = '8px';
 
-  // TTS Control buttons container
-  const ttsControls = document.createElement('div');
-  ttsControls.style.display = 'flex';
-  ttsControls.style.gap = '8px';
-
-  // Play button
-  playBtn = document.createElement('button');
-  playBtn.innerHTML = '▶️';
-  playBtn.title = 'Play summary';
-  playBtn.style.background = 'white';
-  playBtn.style.color = '#1f2937';
-  playBtn.style.border = 'none';
-  playBtn.style.padding = '8px 12px';
-  playBtn.style.fontSize = '16px';
-  playBtn.style.borderRadius = '6px';
-  playBtn.style.cursor = 'pointer';
-  playBtn.style.transition = 'all 0.2s ease';
-  playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  playBtn.addEventListener('click', () => playSummary());
-  playBtn.addEventListener('mouseenter', () => {
-    playBtn.style.transform = 'translateY(-1px)';
-    playBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
-  });
-  playBtn.addEventListener('mouseleave', () => {
-    playBtn.style.transform = 'translateY(0)';
-    playBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  });
-
-  // Pause button
-  pauseBtn = document.createElement('button');
-  pauseBtn.innerHTML = '⏸️';
-  pauseBtn.title = 'Pause summary';
-  pauseBtn.style.background = 'white';
-  pauseBtn.style.color = '#1f2937';
-  pauseBtn.style.border = 'none';
-  pauseBtn.style.padding = '8px 12px';
-  pauseBtn.style.fontSize = '16px';
-  pauseBtn.style.borderRadius = '6px';
-  pauseBtn.style.cursor = 'pointer';
-  pauseBtn.style.transition = 'all 0.2s ease';
-  pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  pauseBtn.style.display = 'none'; // Hidden by default
-  pauseBtn.addEventListener('click', () => pauseSummary());
-  pauseBtn.addEventListener('mouseenter', () => {
-    pauseBtn.style.transform = 'translateY(-1px)';
-    pauseBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
-  });
-  pauseBtn.addEventListener('mouseleave', () => {
-    pauseBtn.style.transform = 'translateY(0)';
-    pauseBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  });
-
-  // Replay button
-  replayBtn = document.createElement('button');
-  replayBtn.innerHTML = '🔄';
-  replayBtn.title = 'Replay summary';
-  replayBtn.style.background = 'white';
-  replayBtn.style.color = '#1f2937';
-  replayBtn.style.border = 'none';
-  replayBtn.style.padding = '8px 12px';
-  replayBtn.style.fontSize = '16px';
-  replayBtn.style.borderRadius = '6px';
-  replayBtn.style.cursor = 'pointer';
-  replayBtn.style.transition = 'all 0.2s ease';
-  replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  replayBtn.addEventListener('click', () => replaySummary());
-  replayBtn.addEventListener('mouseenter', () => {
-    replayBtn.style.transform = 'translateY(-1px)';
-    replayBtn.style.boxShadow = '0 4px 10px rgba(0, 0, 0, 0.2)';
-  });
-  replayBtn.addEventListener('mouseleave', () => {
-    replayBtn.style.transform = 'translateY(0)';
-    replayBtn.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.15)';
-  });
-
-  ttsControls.appendChild(playBtn);
-  ttsControls.appendChild(pauseBtn);
-  ttsControls.appendChild(replayBtn);
-
-  // Copy button
   copySummaryBtn = document.createElement('button');
   copySummaryBtn.textContent = 'Copy';
   copySummaryBtn.style.background = 'white';
@@ -306,7 +221,6 @@ function ensureSummaryUI() {
     }
   });
 
-  actions.appendChild(ttsControls);
   actions.appendChild(copySummaryBtn);
 
   summarySection.appendChild(header);
@@ -314,44 +228,6 @@ function ensureSummaryUI() {
   summarySection.appendChild(actions);
 
   main.appendChild(summarySection);
-}
-
-// ---- TTS Control Functions ----
-function playSummary() {
-  if (!currentSummary) return;
-  
-  chrome.runtime.sendMessage({
-    type: 'speak_text',
-    text: currentSummary,
-    langHint: pageStructureData?.language || pageStructureData?.lang || null
-  });
-  
-  // State will be updated by tts_started/tts_ended messages
-}
-
-function pauseSummary() {
-  chrome.runtime.sendMessage({ type: 'stop_tts' });
-  // State will be updated by tts_ended message
-}
-
-function replaySummary() {
-  // Stop current TTS and replay
-  chrome.runtime.sendMessage({ type: 'stop_tts' });
-  setTimeout(() => {
-    playSummary();
-  }, 100);
-}
-
-function updateTTSButtons() {
-  if (!playBtn || !pauseBtn) return;
-  
-  if (isTTSSpeaking) {
-    playBtn.style.display = 'none';
-    pauseBtn.style.display = 'block';
-  } else {
-    playBtn.style.display = 'block';
-    pauseBtn.style.display = 'none';
-  }
 }
 
 // ---- Voice Command UI (Text Input Version) ----
@@ -419,27 +295,16 @@ function ensureVoiceUI() {
   buttonContainer.style.display = 'flex';
   buttonContainer.style.gap = '8px';
   buttonContainer.style.marginBottom = '10px';
-  buttonContainer.style.justifyContent = 'center';
+  buttonContainer.style.justifyContent = 'space-evenly';
   buttonContainer.style.alignItems = 'stretch';
+  buttonContainer.style.flexWrap = 'wrap';
 
   // Record button
   recordBtn = document.createElement('button');
   recordBtn.id = 'recordBtn';
   recordBtn.textContent = '🎤 Record Audio';
-  recordBtn.className = 'primary-button';
+  recordBtn.className = 'primary-button flex-button';
   recordBtn.setAttribute('aria-label', 'Record audio');
-  recordBtn.style.flex = '1';
-  recordBtn.style.maxWidth = '156px';
-  recordBtn.style.padding = '14px 24px';
-  recordBtn.style.background = 'white';
-  recordBtn.style.color = '#667eea';
-  recordBtn.style.border = 'none';
-  recordBtn.style.borderRadius = '8px';
-  recordBtn.style.cursor = 'pointer';
-  recordBtn.style.fontWeight = '700';
-  recordBtn.style.fontSize = '16px';
-  recordBtn.style.transition = 'all 0.2s ease';
-  recordBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
   recordBtn.style.textTransform = 'uppercase';
   recordBtn.style.letterSpacing = '0.5px';
 
@@ -457,21 +322,29 @@ function ensureVoiceUI() {
     }
   });
 
+  // Explain Images button
+  const explainImagesBtn = document.createElement('button');
+  explainImagesBtn.id = 'explainImagesBtn';
+  explainImagesBtn.textContent = '🖼️ Explain Images';
+  explainImagesBtn.className = 'primary-button flex-button';
+  explainImagesBtn.setAttribute('aria-label', 'Explain images in viewport');
+  explainImagesBtn.style.textTransform = 'uppercase';
+  explainImagesBtn.style.letterSpacing = '0.5px';
+
+  // Hover effects for explain images button
+  explainImagesBtn.addEventListener('mouseenter', () => {
+    explainImagesBtn.style.transform = 'translateY(-2px) scale(1.02)';
+    explainImagesBtn.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.4)';
+  });
+  explainImagesBtn.addEventListener('mouseleave', () => {
+    explainImagesBtn.style.transform = 'translateY(0) scale(1)';
+    explainImagesBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  });
+
   // Submit button (prominent primary action)
   submitBtn = document.createElement('button');
   submitBtn.textContent = 'Submit Command';
-  submitBtn.style.flex = '1';
-  submitBtn.style.maxWidth = '156px';
-  submitBtn.style.padding = '14px 24px';
-  submitBtn.style.background = 'white';
-  submitBtn.style.color = '#667eea';
-  submitBtn.style.border = 'none';
-  submitBtn.style.borderRadius = '8px';
-  submitBtn.style.cursor = 'pointer';
-  submitBtn.style.fontWeight = '700';
-  submitBtn.style.fontSize = '16px';
-  submitBtn.style.transition = 'all 0.2s ease';
-  submitBtn.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+  submitBtn.className = 'primary-button flex-button';
   submitBtn.style.textTransform = 'uppercase';
   submitBtn.style.letterSpacing = '0.5px';
 
@@ -500,6 +373,7 @@ function ensureVoiceUI() {
   // Event listeners
   submitBtn.addEventListener('click', handleCommand);
   recordBtn.addEventListener('click', handleRecordToggle);
+  explainImagesBtn.addEventListener('click', handleExplainImages);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
@@ -508,6 +382,7 @@ function ensureVoiceUI() {
 
   // Add buttons to button container
   buttonContainer.appendChild(recordBtn);
+  buttonContainer.appendChild(explainImagesBtn);
   buttonContainer.appendChild(submitBtn);
 
   voiceSection.appendChild(header);
@@ -694,6 +569,95 @@ async function navigateToSection(sectionId) {
   console.log('🧭 NAVIGATING TO:', sectionId);
 }
 
+// ===== Viewport Image Explanation Function =====
+async function handleExplainImages() {
+  try {
+    console.log('🖼️ Starting viewport image explanation...');
+    
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🔄 Extracting and explaining images from current viewport...';
+    }
+    
+    // Get the current tab
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Send message to content script to extract viewport images
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      command: 'extract_viewport_images'
+    });
+    
+    if (response?.ok && response.images?.length > 0) {
+      console.log('📊 VIEWPORT IMAGES EXTRACTED:', response.images);
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = `🖼️ Found ${response.images.length} images. Explaining each one...`;
+      }
+      
+      // Explain each image using the existing backend
+      const explanations = [];
+      
+      for (let i = 0; i < Math.min(3, response.images.length); i++) {
+        const img = response.images[i];
+        const filename = img.src.split('/').pop().split('.')[0] || 'image';
+        
+        try {
+          // Create a prompt for image explanation
+          const imagePrompt = `Please explain this image for a visually impaired user. 
+          
+Image Details:
+- URL: ${img.src}
+- Filename: ${filename}
+- Alt text: ${img.alt || 'No alt text provided'}
+- Context: ${img.context || 'No context available'}
+- Page: ${tab.title}
+- Section: ${img.section || 'Unknown section'}
+
+Based on the filename, alt text, and context, provide a helpful description of what this image likely shows. Focus on what would be most important for someone who cannot see the image. Keep it under 100 words.`;
+          
+          // Use existing backend session to interpret the image explanation request
+          const interpretation = await interpretCommand(imagePrompt);
+          
+          if (interpretation && interpretation.tts_text) {
+            explanations.push(`Image ${i + 1}: ${interpretation.tts_text}`);
+            console.log(`📷 Image ${i + 1} explained:`, interpretation.tts_text);
+          } else {
+            explanations.push(`Image ${i + 1}: Could not analyze this image.`);
+          }
+          
+        } catch (error) {
+          console.error(`Error explaining image ${i + 1}:`, error);
+          explanations.push(`Image ${i + 1}: Error analyzing image.`);
+        }
+      }
+      
+      // Display all explanations
+      if (voiceDisplay) {
+        voiceDisplay.textContent = `🖼️ Image Explanations:\n\n${explanations.join('\n\n')}`;
+      }
+      
+      // Use TTS to read the first explanation
+      if (explanations.length > 0) {
+        chrome.runtime.sendMessage({
+          type: 'speak_text',
+          text: explanations[0]
+        });
+      }
+      
+    } else {
+      console.log('❌ No images found in viewport');
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '❌ No images found in the current viewport.';
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Error explaining viewport images:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Error: ${error.message}`;
+    }
+  }
+}
+
 // Process interpretation result (reusable for both text and voice commands)
 async function processInterpretation(interpretation, originalCommand = null) {
   if (!voiceDisplay) {
@@ -711,18 +675,6 @@ async function processInterpretation(interpretation, originalCommand = null) {
   voiceDisplay.textContent = displayText;
 
   try {
-    // Speak the TTS text
-    if (interpretation.tts_text) {
-      const langHint = pageStructureData?.language || pageStructureData?.lang || null;
-      chrome.runtime.sendMessage({
-        type: 'speak_text',
-        text: interpretation.tts_text,
-        langHint: langHint
-      }).catch(err => {
-        console.error('TTS error:', err);
-      });
-    }
-
     // Navigate if intent is NAVIGATE
     if (interpretation.intent === 'NAVIGATE' && interpretation.target_section_id) {
       voiceDisplay.textContent += `🧭 Navigating to: ${interpretation.target_section_id}...\n`;
@@ -731,14 +683,12 @@ async function processInterpretation(interpretation, originalCommand = null) {
 
       voiceDisplay.textContent += `✅ Successfully navigated!\n\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else if (interpretation.intent === 'LIST_SECTIONS') {
-      // Show sections in the display
       voiceDisplay.textContent += '\n📋 Available sections:\n';
       if (pageStructureData && pageStructureData.sections) {
         pageStructureData.sections.forEach(section => {
           voiceDisplay.textContent += `  • ${section.label} (${section.role})\n`;
         });
       }
-      voiceDisplay.textContent += `\nConfidence: ${(interpretation.confidence * 100).toFixed(1)}%`;
     } else {
       voiceDisplay.textContent += `\nIntent: ${interpretation.intent}`;
     }
@@ -830,6 +780,13 @@ async function startAnalysis() {
 
     isAnalyzing = true;
     showLoading();
+    
+    // Hide key features and stop rotator
+    const keyFeatures = document.getElementById('keyFeatures');
+    if (keyFeatures) {
+      keyFeatures.classList.add('hidden');
+    }
+    stopFeatureRotator();
 
     clearAnalyzeTimeout();
     analyzeTimeoutId = setTimeout(() => {
@@ -928,12 +885,10 @@ chrome.runtime.onMessage.addListener(async (message) => {
     showSuccess();
 
     ensureSummaryUI();
-    currentSummary = message.summary || ''; // Store for TTS controls
-    summaryText.value = currentSummary;
+    summaryText.value = message.summary || '';
     summarySource.textContent = message.source ? `source: ${message.source}` : '';
     summaryModel.textContent = message.model ? `model: ${message.model}` : '';
     summarySection.style.display = 'block';
-    updateTTSButtons();
 
     // Show voice command UI and create backend session
     ensureVoiceUI();
@@ -961,17 +916,6 @@ chrome.runtime.onMessage.addListener(async (message) => {
     isAnalyzing = false;
     clearAnalyzeTimeout();
     showError(message.error || 'Analysis failed');
-  }
-
-  // Handle TTS state changes
-  if (message.type === 'tts_started') {
-    isTTSSpeaking = true;
-    updateTTSButtons();
-  }
-
-  if (message.type === 'tts_ended') {
-    isTTSSpeaking = false;
-    updateTTSButtons();
   }
 });
 
@@ -1010,11 +954,46 @@ settingsBtn?.addEventListener('click', () => {
   settingsPanel.classList.toggle('hidden', !isHidden);
 });
 
+// ===== Key Features Rotator =====
+let featureRotatorInterval = null;
+
+function startFeatureRotator() {
+  const features = document.querySelectorAll('.feature-item');
+  let currentIndex = 0;
+  
+  function rotateFeatures() {
+    // Remove active class from all features
+    features.forEach(feature => feature.classList.remove('active'));
+    
+    // Add active class to current feature
+    features[currentIndex].classList.add('active');
+    
+    // Move to next feature
+    currentIndex = (currentIndex + 1) % features.length;
+  }
+  
+  // Start rotation immediately
+  rotateFeatures();
+  
+  // Rotate every 3 seconds
+  featureRotatorInterval = setInterval(rotateFeatures, 3000);
+}
+
+function stopFeatureRotator() {
+  if (featureRotatorInterval) {
+    clearInterval(featureRotatorInterval);
+    featureRotatorInterval = null;
+  }
+}
+
 // ---- Init ----
 (async function init() {
   hideAllIndicators();
   // Check recording state and microphone permissions on popup load
   await checkRecordingState();
+  
+  // Start feature rotator
+  startFeatureRotator();
 
   // Analyze button
   analyzeBtn?.addEventListener('click', startAnalysis);

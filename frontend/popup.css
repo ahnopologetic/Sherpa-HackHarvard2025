@@ -24,13 +24,13 @@
   }
   
   h1 {
-    font-size: 24px;
-    font-weight: 700;
+    font-size: 50px;
+    font-weight: 600;
     margin-bottom: 4px;
   }
   
   .subtitle {
-    font-size: 13px;
+    font-size: 15px;
     opacity: 0.9;
   }
   
@@ -41,10 +41,6 @@
   }
   
   .primary-button {
-    width: 100%;
-    max-width: 320px;
-    margin: 0 auto;
-    display: block;
     background: white;
     color: #667eea;
     border: none;
@@ -55,6 +51,21 @@
     cursor: pointer;
     transition: all 0.2s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Full-width primary button (for standalone buttons like Analyze) */
+  .primary-button.full-width {
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    display: block;
+  }
+
+  /* Flex primary button (for buttons in flex containers) */
+  .primary-button.flex-button {
+    flex: 1;
+    min-width: 120px;
+    max-width: 180px;
   }
   
   .primary-button:hover {
@@ -380,5 +391,62 @@
   .copy-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Key Features Rotator */
+  .key-features {
+    margin: 16px auto;
+    padding: 16px 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: visible;
+    min-height: 60px;
+    width: 100%;
+    max-width: 400px;
+    box-sizing: border-box;
+    text-align: center;
+  }
+
+  .feature-item {
+    position: absolute;
+    top: 16px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.5s ease-in-out;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.9);
+    word-wrap: break-word;
+    hyphens: auto;
+    text-align: center;
+  }
+
+  .feature-item.active {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .feature-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .feature-text {
+    font-weight: 500;
+    line-height: 1.4;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Hide features after analysis */
+  .key-features.hidden {
+    display: none;
   }
   
