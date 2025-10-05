@@ -74,3 +74,19 @@ class InterpretResponse(BaseModel):
     transcription: Optional[str] = Field(None, description="Transcribed text from audio (for voice mode)")
     alternatives: List[AlternativeModel]
     telemetry: TelemetryModel
+
+
+# General Q&A Models
+class GeneralQuestionRequest(BaseModel):
+    """Request model for general questions"""
+    question: str = Field(..., description="The question to ask")
+    context: Optional[str] = Field(None, description="Additional context for the question")
+    page_title: Optional[str] = Field(None, description="Title of the current page")
+    page_url: Optional[str] = Field(None, description="URL of the current page")
+
+
+class GeneralQuestionResponse(BaseModel):
+    """Response model for general questions"""
+    answer: str = Field(..., description="AI-generated answer to the question")
+    confidence: float = Field(..., description="Confidence score (0.0 to 1.0)")
+    tts_text: str = Field(..., description="Text-to-speech version of the answer")

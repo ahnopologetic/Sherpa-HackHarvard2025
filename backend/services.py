@@ -196,3 +196,75 @@ class InterpretService:
         nlu_ms = 420
 
         return response
+
+
+class GeneralQuestionService:
+    """Service for handling general questions using Gemini"""
+
+    @staticmethod
+    async def answer_question(
+        question: str,
+        context: Optional[str] = None,
+        page_title: Optional[str] = None,
+        page_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Answer a general question using Gemini API
+        
+        Args:
+            question: The question to answer
+            context: Additional context for the question
+            page_title: Title of the current page
+            page_url: URL of the current page
+            
+        Returns:
+            Dictionary with answer, confidence, and tts_text
+        """
+        try:
+            # Initialize Gemini client
+            client = genai.Client(
+                api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
+            )
+
+            # Create a prompt for general questions
+            prompt = f"""You are a helpful AI assistant that answers questions about web content for accessibility purposes.
+
+Question: {question}
+
+Context Information:
+- Page Title: {page_title or 'Not specified'}
+- Page URL: {page_url or 'Not specified'}
+- Additional Context: {context or 'No additional context provided'}
+
+Please provide a helpful, accurate, and accessible answer to the question. If the question is about summarizing content, provide a clear and concise summary. If it's about explaining something, provide a detailed explanation that would be helpful for visually impaired users.
+
+Keep your response conversational, clear, and under 200 words. Focus on being helpful and accessible."""
+
+            # Call Gemini API
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                    top_k=20,
+                    top_p=0.8,
+                    max_output_tokens=300
+                )
+            )
+
+            # Extract text from response
+            answer = response.text.strip()
+            
+            return {
+                "answer": answer,
+                "confidence": 0.9,  # High confidence for general questions
+                "tts_text": answer
+            }
+
+        except Exception as e:
+            logger.error(f"General question error: {e}")
+            return {
+                "answer": f"Sorry, I couldn't answer that question: {str(e)}",
+                "confidence": 0.0,
+                "tts_text": "Sorry, I couldn't answer that question."
+            }

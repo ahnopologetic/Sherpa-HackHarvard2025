@@ -20,8 +20,10 @@ from models import (
     CreateSessionRequest,
     CreateSessionResponse,
     InterpretResponse,
+    GeneralQuestionRequest,
+    GeneralQuestionResponse,
 )
-from services import SessionService, InterpretService
+from services import SessionService, InterpretService, GeneralQuestionService
 from config import settings
 
 # Initialize FastAPI app
@@ -115,6 +117,38 @@ async def interpret_command(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/v1/ask",
+    response_model=GeneralQuestionResponse,
+    summary="Ask a general question",
+    description="Ask any question and get an AI-generated answer. Perfect for summaries, explanations, and general Q&A.",
+)
+async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionResponse:
+    """
+    Ask a general question and get an AI-generated answer.
+
+    Args:
+        request: General question request with question, context, and page info
+
+    Returns:
+        GeneralQuestionResponse with answer, confidence, and TTS text
+    """
+    try:
+        # Call general question service
+        result = await GeneralQuestionService.answer_question(
+            question=request.question,
+            context=request.context,
+            page_title=request.page_title,
+            page_url=request.page_url
+        )
+
+        return GeneralQuestionResponse(**result)
+
+    except Exception as e:
+        logger.error(f"General question endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
