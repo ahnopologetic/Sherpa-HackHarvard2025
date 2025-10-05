@@ -11,13 +11,18 @@ from google.genai import types
 
 
 from datetime import datetime, timedelta
-from models import CreateSessionRequest, CreateSessionResponse, InterpretResponse
+from models import (
+    CreateSessionRequest,
+    CreateSessionResponse,
+    ImmersiveSummaryResponse,
+    InterpretResponse,
+)
 from config import settings
 
 
 # In-memory session storage (replace with Redis/database in production)
-logger = logging.getLogger('uvicorn.error')
-logger.setLevel(logging.DEBUG) # Set your desired logging level
+logger = logging.getLogger("uvicorn.error")
+logger.setLevel(logging.DEBUG)  # Set your desired logging level
 
 sessions: Dict[str, Dict] = {}
 MOCK_SECTION_MAP = {
@@ -136,15 +141,16 @@ class InterpretService:
 
         # Prepare content parts based on mode
         content_parts = []
-        
+
         if mode == "voice" and audio:
             # For audio mode, pass the audio directly to Gemini for transcription
             logger.info(f"Processing audio input, size: {len(audio)} bytes")
-            content_parts.append(types.Part(inline_data=types.Blob(
-                mime_type="audio/ogg",
-                data=audio
-            )))
-            content_parts.append(types.Part(text="Transcribe this audio and interpret the command."))
+            content_parts.append(
+                types.Part(inline_data=types.Blob(mime_type="audio/ogg", data=audio))
+            )
+            content_parts.append(
+                types.Part(text="Transcribe this audio and interpret the command.")
+            )
         elif text:
             # For text mode, use the text directly
             content_parts.append(types.Part(text=f"Command: {text}"))
@@ -153,9 +159,7 @@ class InterpretService:
 
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[
-                types.Content(role="user", parts=content_parts)
-            ],
+            contents=[types.Content(role="user", parts=content_parts)],
             config=types.GenerateContentConfig(
                 system_instruction=f"""
                 You are a helpful assistant that can interpret voice or text commands to navigate through different sections of a page.
@@ -206,17 +210,17 @@ class GeneralQuestionService:
         question: str,
         context: Optional[str] = None,
         page_title: Optional[str] = None,
-        page_url: Optional[str] = None
+        page_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Answer a general question using Gemini API
-        
+
         Args:
             question: The question to answer
             context: Additional context for the question
             page_title: Title of the current page
             page_url: URL of the current page
-            
+
         Returns:
             Dictionary with answer, confidence, and tts_text
         """
@@ -232,9 +236,9 @@ class GeneralQuestionService:
 Question: {question}
 
 Context Information:
-- Page Title: {page_title or 'Not specified'}
-- Page URL: {page_url or 'Not specified'}
-- Additional Context: {context or 'No additional context provided'}
+- Page Title: {page_title or "Not specified"}
+- Page URL: {page_url or "Not specified"}
+- Additional Context: {context or "No additional context provided"}
 
 Please provide a helpful, accurate, and accessible answer to the question. If the question is about summarizing content, provide a clear and concise summary. If it's about explaining something, provide a detailed explanation that would be helpful for visually impaired users.
 
@@ -245,20 +249,17 @@ Keep your response conversational, clear, and under 200 words. Focus on being he
                 model="gemini-2.0-flash-exp",
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.3,
-                    top_k=20,
-                    top_p=0.8,
-                    max_output_tokens=300
-                )
+                    temperature=0.3, top_k=20, top_p=0.8, max_output_tokens=300
+                ),
             )
 
             # Extract text from response
             answer = response.text.strip()
-            
+
             return {
                 "answer": answer,
                 "confidence": 0.9,  # High confidence for general questions
-                "tts_text": answer
+                "tts_text": answer,
             }
 
         except Exception as e:
@@ -266,5 +267,92 @@ Keep your response conversational, clear, and under 200 words. Focus on being he
             return {
                 "answer": f"Sorry, I couldn't answer that question: {str(e)}",
                 "confidence": 0.0,
-                "tts_text": "Sorry, I couldn't answer that question."
+                "tts_text": "Sorry, I couldn't answer that question.",
             }
+
+
+class ImmersiveSummaryService:
+    """Service for generating immersive summary"""
+
+    @staticmethod
+    async def generate_immersive_summary(
+        page_url: str,
+        page_title: str,
+        context: Optional[str] = None,
+    ) -> ImmersiveSummaryResponse:
+        """
+        Generate an immersive summary of the page.
+        """
+        client = genai.Client(
+            api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
+        )
+
+        prompt = f"""
+### 🧩 Prompt: *Immersive Summary Transcript Generator*
+
+**Role:**
+You are an *audio narrator and sensory writer* tasked with generating an *immersive transcript* for a visually-impaired listener. Your goal is to capture **not just what the page says**, but also **how it feels** — tone, layout, imagery, and flow — so the listener experiences the emotional and structural essence of the webpage as if seeing it.
+
+**Input:**
+Page URL: {page_url}
+Page Title: {page_title}
+
+**Instruction:**
+Generate a *spoken-style transcript* (not a plain summary) that follows this structure:
+
+1. 🎬 **Opening Scene (Orientation)**
+
+   * Announce the title and site name.
+   * Give a brief visual orientation (e.g., “The article opens with a large header against a dark background”).
+   * Mention any prominent image or color tone that defines the page’s first impression.
+
+2. 📖 **Narrative Flow (Content)**
+
+   * Move through the article in the same order a sighted reader would scan.
+   * Read key sentences naturally, summarizing paragraphs concisely.
+   * Insert gentle transitions between sections (“Next, the article shifts focus to…”).
+   * When encountering an image, describe it vividly but succinctly (“A photo of three students holding signs, smiling under the sunlight”).
+   * Maintain rhythm, tone, and pacing consistent with the sentiment of each section (e.g., calm, urgent, celebratory).
+
+3. 🪄 **Visual and Emotional Context**
+
+   * Convey color, typography, or layout as emotional cues, not raw data.
+   * Example: “The next section, written in bold white letters over a deep blue background, gives a sense of quiet determination.”
+   * For pull quotes or asides, use expressive narration: “In a highlighted note to the side, the author writes…”
+
+4. 🔚 **Closure**
+
+   * End with a short reflection that feels like the visual “bottom” of the page.
+   * Mention footers or author credits naturally (“At the end, the article credits journalist Alex Kim, writing for The Atlantic.”).
+   * Close with a gentle sign-off cue (“End of immersive summary.”).
+
+**Style Requirements:**
+
+* Keep it under 5 minutes when read aloud (~500–700 words).
+* Use conversational pacing, not robotic summarization.
+* Include the timestamp of each section in the summary.
+* Prioritize sensory verbs: *see, feel, stand, hover, glow, flow, stretch, rise*.
+* Avoid data or URLs unless crucial for meaning.
+* Use accessible language: vivid yet clear.
+        """
+
+        try:
+            # Create a prompt for immersive summary
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    top_k=10,
+                    top_p=0.8,
+                    response_schema=ImmersiveSummaryResponse,
+                    response_mime_type="application/json",
+                ),
+            )
+            logger.info(f"{response.parsed=}")
+            return response.parsed
+        except Exception as e:
+            logger.error(f"Immersive summary error: {e}")
+            return ImmersiveSummaryResponse(
+                summary=f"Sorry, I couldn't generate a summary: {str(e)}"
+            )
