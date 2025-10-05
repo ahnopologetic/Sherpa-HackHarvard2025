@@ -3,8 +3,10 @@ Sherpa API - FastAPI application for voice-controlled web navigation
 """
 
 import logging
+import uuid
 
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     HTTPException,
     File,
@@ -167,21 +169,22 @@ async def ask_question(request: GeneralQuestionRequest) -> GeneralQuestionRespon
 )
 async def generate_immersive_summary(
     request: ImmersiveSummaryRequest,
+    tasks: BackgroundTasks,
 ) -> ImmersiveSummaryResponse:
     """
     Generate an immersive summary of the page.
     """
-    try:
-        result = await ImmersiveSummaryService.generate_immersive_summary(
-            page_url=request.page_url,
-            page_title=request.page_title,
-            context=request.context,
-        )
-        logger.info(f"{result=}")
-        return result
-    except Exception as e:
-        logger.error(f"Immersive summary endpoint error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    job_id = str(uuid.uuid4())
+    tasks.add_task(
+        ImmersiveSummaryService.generate_immersive_summary_audio_job,
+        job_id=job_id,
+        page_url=request.page_url,
+        page_title=request.page_title,
+        context=request.context,
+    )
+    return ImmersiveSummaryResponse(
+        job_id=job_id,
+    )
 
 
 @app.get("/health")

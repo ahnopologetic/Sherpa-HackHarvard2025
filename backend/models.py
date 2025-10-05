@@ -111,4 +111,4 @@ class ImmersiveSummaryRequest(BaseModel):
 class ImmersiveSummaryResponse(BaseModel):
     """Response model for immersive summary"""
 
-    summary: str = Field(..., description="AI-generated summary of the page")
+    job_id: str = Field(..., description="Job ID for the immersive summary")

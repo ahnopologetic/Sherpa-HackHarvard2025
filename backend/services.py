@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, Optional
 
 import uuid
+import wave
 from google import genai
 from google.genai import types
 
@@ -25,6 +26,7 @@ logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.DEBUG)  # Set your desired logging level
 
 sessions: Dict[str, Dict] = {}
+jobs: Dict[str, dict] = {}
 MOCK_SECTION_MAP = {
     "title": "Why bees matter",
     "sections": [
@@ -33,6 +35,14 @@ MOCK_SECTION_MAP = {
     ],
     "aliases": {"discussion": "comments"},
 }
+
+
+def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
+    with wave.open(filename, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm)
 
 
 class SessionService:
@@ -275,7 +285,7 @@ class ImmersiveSummaryService:
     """Service for generating immersive summary"""
 
     @staticmethod
-    async def generate_immersive_summary(
+    async def generate_immersive_summary_transcript(
         page_url: str,
         page_title: str,
         context: Optional[str] = None,
@@ -349,10 +359,71 @@ Generate a *spoken-style transcript* (not a plain summary) that follows this str
                     response_mime_type="application/json",
                 ),
             )
-            logger.info(f"{response.parsed=}")
+            logger.info("Immersive summary transcript generated successfully")
             return response.parsed
         except Exception as e:
             logger.error(f"Immersive summary error: {e}")
             return ImmersiveSummaryResponse(
                 summary=f"Sorry, I couldn't generate a summary: {str(e)}"
             )
+
+    @staticmethod
+    async def generate_immersive_summary_audio(
+        transcript: str,
+        output_filepath: str,
+    ) -> bytes:
+        """
+        Generate an immersive summary of the page.
+        """
+        client = genai.Client(
+            api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-tts",
+            contents=transcript,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Kore",
+                        )
+                    )
+                ),
+            ),
+        )
+
+        data = response.candidates[0].content.parts[0].inline_data.data
+        wave_file(output_filepath, data)
+        logger.info("Immersive summary audio generated successfully")
+        return data
+
+    async def generate_immersive_summary_audio_job(
+        job_id: str,
+        page_url: str,
+        page_title: str,
+        context: Optional[str] = None,
+    ) -> None:
+        """
+        Generate an immersive summary of the page.
+        """
+        jobs[job_id] = {
+            "page_url": page_url,
+            "page_title": page_title,
+            "context": context,
+            "status": "pending",
+        }
+        transcript = (
+            await ImmersiveSummaryService.generate_immersive_summary_transcript(
+                page_url=page_url,
+                page_title=page_title,
+                context=context,
+            )
+        )
+        await ImmersiveSummaryService.generate_immersive_summary_audio(
+            transcript=transcript,
+            output_filepath=f"{job_id}.wav",
+        )
+        jobs[job_id]["status"] = "completed"
+        logger.info("Immersive summary audio job completed")
