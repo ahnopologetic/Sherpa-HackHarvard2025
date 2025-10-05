@@ -59,6 +59,14 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_event():
+    """Clean up old cache entries on startup"""
+    from services import cleanup_old_cache_entries
+    cleanup_old_cache_entries()
+    logger.info("🚀 Server started, cache cleanup completed")
+
+
 @app.post(
     "/v1/sessions",
     response_model=CreateSessionResponse,
@@ -229,10 +237,97 @@ async def get_immersive_summary_transcript(job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post(
+    "/v1/immersive-summary/{job_id}/interact",
+    summary="Ask a question during immersive summary playback",
+    description="Upload audio of a question and get an audio answer that relates to the content, then transitions back to the summary.",
+    response_class=FileResponse,
+)
+async def interact_with_immersive_summary(
+    job_id: str = Path(..., description="Job ID for the immersive summary"),
+    audio: UploadFile = File(..., description="Audio file with user's question (wav/mp3/ogg)"),
+    current_position: Optional[float] = Form(None, description="Current playback position in seconds"),
+):
+    """
+    Handle user interaction during immersive summary playback.
+    
+    The user can ask a question by uploading audio. The system will:
+    1. Transcribe the question
+    2. Answer it based on the summary context
+    3. Generate audio response that transitions back to the summary
+    
+    Args:
+        job_id: The job ID for the immersive summary
+        audio: Audio file containing the user's question
+        current_position: Optional current playback position in seconds
+    
+    Returns:
+        Audio file (WAV) containing the answer
+    """
+    try:
+        # Read audio bytes
+        audio_bytes = await audio.read()
+        
+        # Call the service to handle interaction
+        answer_text, transcribed_question, answer_audio_bytes = (
+            ImmersiveSummaryService.handle_interaction(
+                job_id=job_id,
+                audio_bytes=audio_bytes,
+                current_position=current_position,
+            )
+        )
+        
+        # Save the answer audio to a file
+        answer_file_path = f"{job_id}_interact_{uuid.uuid4()}.wav"
+        
+        # Write the audio bytes to a WAV file
+        import wave
+        with wave.open(answer_file_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(24000)
+            wf.writeframes(answer_audio_bytes)
+        
+        logger.info(f"Interaction processed - Question: {transcribed_question}")
+        logger.info(f"Answer: {answer_text}")
+        
+        # Return the audio file
+        return FileResponse(
+            path=answer_file_path,
+            media_type="audio/wav",
+            filename=f"answer_{job_id}.wav",
+            headers={
+                "X-Transcribed-Question": transcribed_question,
+                "X-Answer-Text": answer_text,
+            }
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Interaction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get("/v1/cache/stats")
+async def get_cache_stats():
+    """Get cache statistics"""
+    from services import get_cache_stats
+    return get_cache_stats()
+
+
+@app.post("/v1/cache/cleanup")
+async def cleanup_cache():
+    """Clean up old cache entries"""
+    from services import cleanup_old_cache_entries
+    cleanup_old_cache_entries()
+    return {"message": "Cache cleanup completed"}
 
 
 if __name__ == "__main__":

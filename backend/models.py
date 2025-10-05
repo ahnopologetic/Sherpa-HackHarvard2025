@@ -131,3 +131,20 @@ class ImmersiveSummaryTranscriptResponse(BaseModel):
         None,
         description="Playback time of the transcript. For example: [{'name': 'Main article', 'playback_time': '00:00'}, ...]",
     )
+
+
+class ImmersiveSummaryInteractRequest(BaseModel):
+    """Request model for interacting with immersive summary"""
+
+    current_position: Optional[float] = Field(
+        None, description="Current playback position in seconds"
+    )
+
+
+class ImmersiveSummaryInteractResponse(BaseModel):
+    """Response model for interacting with immersive summary"""
+
+    answer_text: str = Field(..., description="Text of the answer")
+    transcribed_question: str = Field(
+        ..., description="Transcribed question from user audio"
+    )

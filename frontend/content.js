@@ -1000,18 +1000,60 @@ function setupDockControls() {
   const progressBar = document.getElementById('sherpa-progress-bar');
   const volumeSlider = document.getElementById('sherpa-volume-slider');
 
-  playPauseBtn?.addEventListener('click', togglePlayPause);
-  skipBackBtn?.addEventListener('click', () => skipTime(-10));
-  skipForwardBtn?.addEventListener('click', () => skipTime(10));
-  closeDockBtn?.addEventListener('click', closeDock);
-  progressBar?.addEventListener('click', seekToPosition);
+  console.log('[Sherpa Dock] Setting up controls', {
+    playPauseBtn: !!playPauseBtn,
+    skipBackBtn: !!skipBackBtn,
+    skipForwardBtn: !!skipForwardBtn,
+    closeDockBtn: !!closeDockBtn,
+    progressBar: !!progressBar,
+    volumeSlider: !!volumeSlider
+  });
+
+  if (playPauseBtn) {
+    playPauseBtn.addEventListener('click', (e) => {
+      console.log('[Sherpa Dock] Play/pause button clicked');
+      e.preventDefault();
+      e.stopPropagation();
+      togglePlayPause();
+    });
+  } else {
+    console.error('[Sherpa Dock] Play/pause button not found!');
+  }
+
+  if (skipBackBtn) {
+    skipBackBtn.addEventListener('click', () => {
+      console.log('[Sherpa Dock] Skip back clicked');
+      skipTime(-10);
+    });
+  }
+
+  if (skipForwardBtn) {
+    skipForwardBtn.addEventListener('click', () => {
+      console.log('[Sherpa Dock] Skip forward clicked');
+      skipTime(10);
+    });
+  }
+
+  if (closeDockBtn) {
+    closeDockBtn.addEventListener('click', () => {
+      console.log('[Sherpa Dock] Close button clicked');
+      closeDock();
+    });
+  }
+
+  if (progressBar) {
+    progressBar.addEventListener('click', seekToPosition);
+  }
   
   // Volume control
-  volumeSlider?.addEventListener('input', (e) => {
-    if (dockAudio) {
-      dockAudio.volume = e.target.value / 100;
-    }
-  });
+  if (volumeSlider) {
+    volumeSlider.addEventListener('input', (e) => {
+      if (dockAudio) {
+        dockAudio.volume = e.target.value / 100;
+        console.log('[Sherpa Dock] Volume set to', e.target.value);
+      }
+    });
+  }
 }
 
 function setupKeyboardShortcuts() {
@@ -1044,17 +1086,45 @@ function setupKeyboardShortcuts() {
 }
 
 function togglePlayPause() {
-  if (!dockAudio) return;
+  console.log('[Sherpa Dock] togglePlayPause called', {
+    hasDockAudio: !!dockAudio,
+    hasDock: !!sherpaDock,
+    isPaused: dockAudio?.paused,
+    currentTime: dockAudio?.currentTime,
+    duration: dockAudio?.duration
+  });
+
+  if (!dockAudio) {
+    console.error('[Sherpa Dock] No audio element available');
+    return;
+  }
+
+  if (!sherpaDock) {
+    console.error('[Sherpa Dock] No dock element available');
+    return;
+  }
 
   const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
   const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
 
+  if (!playIcon || !pauseIcon) {
+    console.error('[Sherpa Dock] Play/pause icons not found');
+    return;
+  }
+
   if (dockAudio.paused) {
-    dockAudio.play();
-    playIcon.style.display = 'none';
-    pauseIcon.style.display = 'block';
-    isPlaying = true;
+    console.log('[Sherpa Dock] Attempting to play audio...');
+    dockAudio.play().then(() => {
+      console.log('[Sherpa Dock] Audio playing successfully');
+      playIcon.style.display = 'none';
+      pauseIcon.style.display = 'block';
+      isPlaying = true;
+    }).catch(err => {
+      console.error('[Sherpa Dock] Failed to play audio:', err);
+      alert('Failed to play audio. Please try clicking the button again or check browser console for details.');
+    });
   } else {
+    console.log('[Sherpa Dock] Pausing audio...');
     dockAudio.pause();
     playIcon.style.display = 'block';
     pauseIcon.style.display = 'none';
@@ -1284,58 +1354,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Show immersive summary dock
   if (request.command === 'show_immersive_dock') {
     try {
+      console.log('[Sherpa Dock] Received show_immersive_dock command', {
+        hasAudioUrl: !!request.audioUrl,
+        hasTranscript: !!request.transcript,
+        hasPlaybackTimes: !!request.playbackTimes,
+        transcriptLength: request.transcript?.length,
+        playbackTimesCount: request.playbackTimes?.length
+      });
+
       createSherpaDock();
       
       // Store playback times for synchronization
       if (request.playbackTimes) {
         playbackTimes = request.playbackTimes;
-        console.log('[Sherpa Dock] Received', playbackTimes.length, 'section timings');
+        console.log('[Sherpa Dock] Received', playbackTimes.length, 'section timings:', playbackTimes);
       }
       
       // Set up audio
       if (request.audioUrl) {
+        console.log('[Sherpa Dock] Creating audio element with URL:', request.audioUrl.substring(0, 50) + '...');
         dockAudio = new Audio(request.audioUrl);
         dockAudio.volume = 0.8; // Set default volume to 80%
+        
+        console.log('[Sherpa Dock] Audio element created:', {
+          src: dockAudio.src?.substring(0, 50) + '...',
+          readyState: dockAudio.readyState,
+          paused: dockAudio.paused,
+          volume: dockAudio.volume
+        });
+        
         dockAudio.addEventListener('timeupdate', updateProgress);
         dockAudio.addEventListener('ended', () => {
+          console.log('[Sherpa Dock] Audio ended');
           const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
           const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
-          playIcon.style.display = 'block';
-          pauseIcon.style.display = 'none';
+          if (playIcon && pauseIcon) {
+            playIcon.style.display = 'block';
+            pauseIcon.style.display = 'none';
+          }
           isPlaying = false;
+        });
+        
+        dockAudio.addEventListener('error', (e) => {
+          console.error('[Sherpa Dock] Audio error:', e, dockAudio.error);
+        });
+        
+        dockAudio.addEventListener('canplay', () => {
+          console.log('[Sherpa Dock] Audio can play');
         });
         
         // Wait for audio metadata to load before setting transcript (so we have duration)
         dockAudio.addEventListener('loadedmetadata', () => {
-          console.log('[Sherpa Dock] Audio loaded, duration:', dockAudio.duration);
+          console.log('[Sherpa Dock] Audio metadata loaded, duration:', dockAudio.duration, 'seconds');
           
           // Set transcript with timing data
           if (request.transcript) {
+            console.log('[Sherpa Dock] Setting transcript');
             setTranscript(request.transcript, dockAudio.duration);
           }
           
           // Auto-play after a small delay
           setTimeout(() => {
             if (dockAudio && sherpaDock) {
+              console.log('[Sherpa Dock] Attempting auto-play...');
               dockAudio.play().then(() => {
                 const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
                 const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
-                playIcon.style.display = 'none';
-                pauseIcon.style.display = 'block';
+                if (playIcon && pauseIcon) {
+                  playIcon.style.display = 'none';
+                  pauseIcon.style.display = 'block';
+                }
                 isPlaying = true;
-                console.log('🎵 Auto-playing immersive summary');
+                console.log('[Sherpa Dock] ✅ Auto-playing immersive summary');
               }).catch(err => {
-                console.log('Auto-play blocked, user interaction required:', err);
+                console.log('[Sherpa Dock] ⚠️ Auto-play blocked (this is normal), user interaction required:', err);
               });
             }
           }, 500);
         });
+      } else {
+        console.error('[Sherpa Dock] No audio URL provided!');
       }
       
       sendResponse({ ok: true });
       return true;
     } catch (error) {
-      console.error('[Sherpa] Error showing immersive dock:', error);
+      console.error('[Sherpa Dock] Error showing immersive dock:', error);
       sendResponse({ ok: false, error: error.message });
     }
   }

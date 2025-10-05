@@ -1,8 +1,8 @@
 // popup.js — Project Sherpa
 
 // ---- Config ----
-const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
-// const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
+// const BACKEND_BASE = 'https://sherpa-hackharvard2025-production.up.railway.app'; // Update this to your backend URL
+const BACKEND_BASE = 'http://localhost:8000'; // Update this to your backend URL
 
 // ---- Elements (existing IDs in your HTML) ----
 const analyzeBtn = document.getElementById('analyzeBtn');
@@ -519,8 +519,13 @@ function ensureSummaryUI() {
 }
 
 // ---- Voice Command UI (Text Input Version) ----
-let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn, createImmersiveSummaryBtn;
+let voiceSection, textInput, submitBtn, voiceDisplay, quickNavContainer, recordBtn, createImmersiveSummaryBtn, askQuestionBtn;
 let immersiveSummaryAudio = null; // Store the audio element for playback
+let immersiveSummaryAudioUrl = null; // Store the audio URL for the dock
+let immersiveSummaryTranscript = null; // Store the transcript for the dock
+let isAskingQuestion = false; // Track if we're in question mode
+let questionMediaRecorder = null; // MediaRecorder for question audio
+let questionAudioChunks = []; // Store audio chunks for the question
 let currentJobId = null; // Store the current job ID for polling
 let pollingInterval = null; // Store the polling interval
 let immersivePlaybackTimes = []; // Store section playback times for syncing
@@ -641,6 +646,39 @@ function ensureVoiceUI() {
     }
   });
 
+  // Ask Question button (appears after summary is generated)
+  askQuestionBtn = document.createElement('button');
+  askQuestionBtn.id = 'askQuestionBtn';
+  askQuestionBtn.innerHTML = '<span aria-hidden="true">💬</span> Ask a Question';
+  askQuestionBtn.className = 'primary-button';
+  askQuestionBtn.setAttribute('aria-label', 'Ask a question about the summary');
+  askQuestionBtn.style.width = '100%';
+  askQuestionBtn.style.padding = '12px 20px';
+  askQuestionBtn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+  askQuestionBtn.style.color = 'white';
+  askQuestionBtn.style.border = 'none';
+  askQuestionBtn.style.borderRadius = '8px';
+  askQuestionBtn.style.cursor = 'pointer';
+  askQuestionBtn.style.fontWeight = '600';
+  askQuestionBtn.style.fontSize = '15px';
+  askQuestionBtn.style.transition = 'all 0.2s ease';
+  askQuestionBtn.style.boxShadow = '0 3px 10px rgba(245, 158, 11, 0.3)';
+  askQuestionBtn.style.marginTop = '8px';
+  askQuestionBtn.style.display = 'none'; // Hidden by default
+
+  askQuestionBtn.addEventListener('mouseenter', () => {
+    if (!askQuestionBtn.disabled) {
+      askQuestionBtn.style.transform = 'translateY(-2px)';
+      askQuestionBtn.style.boxShadow = '0 5px 15px rgba(245, 158, 11, 0.5)';
+    }
+  });
+  askQuestionBtn.addEventListener('mouseleave', () => {
+    if (!askQuestionBtn.disabled) {
+      askQuestionBtn.style.transform = 'translateY(0)';
+      askQuestionBtn.style.boxShadow = '0 3px 10px rgba(245, 158, 11, 0.3)';
+    }
+  });
+
   // Record button
   recordBtn = document.createElement('button');
   recordBtn.id = 'recordBtn';
@@ -755,6 +793,7 @@ function ensureVoiceUI() {
   explainImagesBtn.addEventListener('click', handleExplainImages);
   sectionSummaryBtn.addEventListener('click', generateSectionSummary);
   createImmersiveSummaryBtn.addEventListener('click', handleCreateImmersiveSummary);
+  askQuestionBtn.addEventListener('click', handleAskQuestion);
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       handleCommand();
@@ -772,6 +811,7 @@ function ensureVoiceUI() {
   voiceSection.appendChild(inputHelp);
   voiceSection.appendChild(textInput);
   voiceSection.appendChild(createImmersiveSummaryBtn); // Add immersive summary button on top
+  voiceSection.appendChild(askQuestionBtn); // Add ask question button
   voiceSection.appendChild(buttonContainer); // Add button container instead of individual buttons
   voiceSection.appendChild(voiceDisplay);
 
@@ -964,6 +1004,7 @@ function startPollingForImmersiveSummary(jobId) {
         
         // Store the audio for playback
         immersiveSummaryAudio = new Audio(audioUrl);
+        immersiveSummaryAudioUrl = audioUrl; // Store for dock
         
         // Fetch transcript data with playback times
         let fullTranscript = '';
@@ -975,6 +1016,7 @@ function startPollingForImmersiveSummary(jobId) {
             
             // Store full transcript text
             fullTranscript = transcriptData.transcript || '';
+            immersiveSummaryTranscript = fullTranscript; // Store for dock
             
             // Parse and store playback times
             if (transcriptData.playback_time && Array.isArray(transcriptData.playback_time)) {
@@ -994,7 +1036,7 @@ function startPollingForImmersiveSummary(jobId) {
           console.warn('Could not fetch transcript data:', error);
         }
         
-        // Show immersive dock in the main window
+        // Try to show immersive dock in the main window automatically
         try {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
           if (tab?.id) {
@@ -1007,7 +1049,8 @@ function startPollingForImmersiveSummary(jobId) {
             console.log('✅ Immersive dock shown in main window');
           }
         } catch (error) {
-          console.warn('Could not show dock in main window:', error);
+          console.warn('Could not show dock in main window automatically:', error);
+          console.log('User can manually open it with the "Open Dock" button');
         }
         
         if (voiceDisplay) {
@@ -1078,6 +1121,10 @@ function setImmersiveSummaryButtonState(state) {
       createImmersiveSummaryBtn.style.cursor = 'not-allowed';
       createImmersiveSummaryBtn.setAttribute('aria-busy', 'true');
       createImmersiveSummaryBtn.setAttribute('aria-label', 'Generating immersive summary, please wait');
+      
+      // Hide the open dock button while loading
+      hideOpenDockButton();
+      
       playLoadingSound();
       break;
       
@@ -1090,9 +1137,17 @@ function setImmersiveSummaryButtonState(state) {
       createImmersiveSummaryBtn.setAttribute('aria-busy', 'false');
       createImmersiveSummaryBtn.setAttribute('aria-label', 'Play immersive audio summary');
       
+      // Show ask question button
+      if (askQuestionBtn) {
+        askQuestionBtn.style.display = 'block';
+      }
+      
       // Change click handler to play audio
       createImmersiveSummaryBtn.removeEventListener('click', handleCreateImmersiveSummary);
       createImmersiveSummaryBtn.addEventListener('click', playImmersiveSummary);
+      
+      // Show "Open Dock" button
+      showOpenDockButton();
       
       stopLoadingSound();
       playNotificationSound();
@@ -1172,6 +1227,299 @@ function playImmersiveSummary() {
     if (voiceDisplay) {
       voiceDisplay.textContent = `❌ Error playing audio: ${error.message}`;
     }
+  }
+}
+
+// ---- Ask Question Functions ----
+async function handleAskQuestion() {
+  if (!currentJobId) {
+    console.error('No job ID available for interaction');
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '❌ No immersive summary available to ask questions about.';
+    }
+    return;
+  }
+
+  if (!isAskingQuestion) {
+    // Start recording question
+    await startQuestionRecording();
+  } else {
+    // Stop recording and send question
+    await stopQuestionRecording();
+  }
+}
+
+async function startQuestionRecording() {
+  try {
+    // Pause the immersive summary audio
+    const wasPlaying = immersiveSummaryAudio && !immersiveSummaryAudio.paused;
+    if (wasPlaying) {
+      immersiveSummaryAudio.pause();
+      console.log('⏸️ Paused immersive summary for question');
+    }
+
+    // Request microphone permission
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    
+    questionMediaRecorder = new MediaRecorder(stream);
+    questionAudioChunks = [];
+    
+    questionMediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        questionAudioChunks.push(event.data);
+      }
+    };
+    
+    questionMediaRecorder.start();
+    isAskingQuestion = true;
+    
+    // Update button UI
+    askQuestionBtn.innerHTML = '<span aria-hidden="true">⏹️</span> Stop Recording';
+    askQuestionBtn.setAttribute('aria-label', 'Stop recording your question');
+    askQuestionBtn.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+    
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🎤 Recording your question... Click again to stop.';
+    }
+    
+    announceToScreenReader('Recording your question', 'polite');
+    
+  } catch (error) {
+    console.error('Error starting question recording:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Could not access microphone: ${error.message}`;
+    }
+  }
+}
+
+async function stopQuestionRecording() {
+  if (!questionMediaRecorder) return;
+  
+  return new Promise((resolve) => {
+    questionMediaRecorder.onstop = async () => {
+      // Stop all tracks
+      questionMediaRecorder.stream.getTracks().forEach(track => track.stop());
+      
+      // Reset button UI
+      askQuestionBtn.innerHTML = '<span aria-hidden="true">💬</span> Ask a Question';
+      askQuestionBtn.setAttribute('aria-label', 'Ask a question about the summary');
+      askQuestionBtn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+      askQuestionBtn.disabled = true;
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '⏳ Processing your question...';
+      }
+      
+      // Create blob from recorded chunks
+      const audioBlob = new Blob(questionAudioChunks, { type: 'audio/wav' });
+      
+      // Send question to backend
+      await sendQuestionToBackend(audioBlob);
+      
+      isAskingQuestion = false;
+      resolve();
+    };
+    
+    questionMediaRecorder.stop();
+  });
+}
+
+async function sendQuestionToBackend(audioBlob) {
+  try {
+    // Get current playback position
+    const currentPosition = immersiveSummaryAudio ? immersiveSummaryAudio.currentTime : 0;
+    
+    // Create form data
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'question.wav');
+    if (currentPosition > 0) {
+      formData.append('current_position', currentPosition.toString());
+    }
+    
+    console.log(`🎤 Sending question to backend (position: ${currentPosition.toFixed(1)}s)...`);
+    
+    // Send to backend
+    const response = await fetch(
+      `${BACKEND_BASE}/v1/immersive-summary/${currentJobId}/interact`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Backend error: ${response.status}`);
+    }
+    
+    // Get transcribed question and answer text from headers
+    const transcribedQuestion = response.headers.get('X-Transcribed-Question') || 'Your question';
+    const answerText = response.headers.get('X-Answer-Text') || '';
+    
+    console.log(`📝 Question: ${transcribedQuestion}`);
+    console.log(`💬 Answer: ${answerText}`);
+    
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `Q: "${transcribedQuestion}"\n\n🔊 Playing answer...`;
+    }
+    
+    // Get answer audio blob
+    const answerBlob = await response.blob();
+    const answerUrl = URL.createObjectURL(answerBlob);
+    
+    // Play answer audio
+    const answerAudio = new Audio(answerUrl);
+    
+    answerAudio.onplay = () => {
+      announceToScreenReader('Playing answer to your question', 'polite');
+    };
+    
+    answerAudio.onended = () => {
+      console.log('✅ Answer finished, resuming immersive summary');
+      
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '✅ Answer complete. Resuming summary...';
+      }
+      
+      // Resume the immersive summary
+      if (immersiveSummaryAudio) {
+        setTimeout(() => {
+          immersiveSummaryAudio.play();
+          announceToScreenReader('Resuming immersive summary', 'polite');
+        }, 500);
+      }
+      
+      // Clean up
+      URL.revokeObjectURL(answerUrl);
+      
+      // Re-enable ask question button
+      askQuestionBtn.disabled = false;
+    };
+    
+    answerAudio.onerror = (error) => {
+      console.error('Error playing answer audio:', error);
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '❌ Error playing answer audio';
+      }
+      askQuestionBtn.disabled = false;
+    };
+    
+    await answerAudio.play();
+    
+  } catch (error) {
+    console.error('Error sending question to backend:', error);
+    if (voiceDisplay) {
+      voiceDisplay.textContent = `❌ Error processing question: ${error.message}`;
+    }
+    askQuestionBtn.disabled = false;
+    
+    // Resume playback even if there was an error
+    if (immersiveSummaryAudio && immersiveSummaryAudio.paused) {
+      setTimeout(() => {
+        immersiveSummaryAudio.play();
+      }, 1000);
+    }
+  }
+}
+
+// ---- Open Dock Button ----
+let openDockBtn = null;
+
+function showOpenDockButton() {
+  // Check if button already exists
+  if (openDockBtn) return;
+  
+  // Create the button
+  openDockBtn = document.createElement('button');
+  openDockBtn.id = 'openDockBtn';
+  openDockBtn.className = 'btn btn-secondary';
+  openDockBtn.innerHTML = '<span aria-hidden="true">🎬</span> Open Dock in Main Window';
+  openDockBtn.setAttribute('aria-label', 'Open immersive summary dock in main window');
+  openDockBtn.style.marginTop = '12px';
+  openDockBtn.style.background = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+  openDockBtn.style.border = 'none';
+  openDockBtn.style.color = 'white';
+  openDockBtn.style.padding = '12px 24px';
+  openDockBtn.style.borderRadius = '8px';
+  openDockBtn.style.cursor = 'pointer';
+  openDockBtn.style.fontWeight = '600';
+  openDockBtn.style.fontSize = '14px';
+  openDockBtn.style.width = '100%';
+  openDockBtn.style.transition = 'all 0.3s ease';
+  
+  // Add hover effect
+  openDockBtn.addEventListener('mouseenter', () => {
+    openDockBtn.style.transform = 'translateY(-2px)';
+    openDockBtn.style.boxShadow = '0 8px 16px rgba(245, 158, 11, 0.3)';
+  });
+  
+  openDockBtn.addEventListener('mouseleave', () => {
+    openDockBtn.style.transform = 'translateY(0)';
+    openDockBtn.style.boxShadow = 'none';
+  });
+  
+  // Add click handler
+  openDockBtn.addEventListener('click', async () => {
+    console.log('🎬 Open Dock button clicked');
+    
+    if (!immersiveSummaryAudioUrl || !immersiveSummaryTranscript) {
+      console.error('Missing audio URL or transcript');
+      if (voiceDisplay) {
+        voiceDisplay.textContent = '❌ Error: Audio data not available';
+      }
+      return;
+    }
+    
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.tabs.sendMessage(tab.id, {
+          command: 'show_immersive_dock',
+          audioUrl: immersiveSummaryAudioUrl,
+          transcript: immersiveSummaryTranscript,
+          playbackTimes: immersivePlaybackTimes
+        });
+        
+        console.log('✅ Dock opened in main window');
+        if (voiceDisplay) {
+          voiceDisplay.textContent = '✅ Dock opened in main window!';
+        }
+        
+        // Update button text
+        openDockBtn.innerHTML = '<span aria-hidden="true">✅</span> Dock Opened';
+        openDockBtn.disabled = true;
+        openDockBtn.style.opacity = '0.7';
+        
+        // Re-enable after a delay
+        setTimeout(() => {
+          openDockBtn.innerHTML = '<span aria-hidden="true">🎬</span> Open Dock in Main Window';
+          openDockBtn.disabled = false;
+          openDockBtn.style.opacity = '1';
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Error opening dock:', error);
+      if (voiceDisplay) {
+        voiceDisplay.textContent = `❌ Error opening dock: ${error.message}`;
+      }
+    }
+  });
+  
+  // Insert the button after the immersive summary button
+  if (createImmersiveSummaryBtn && createImmersiveSummaryBtn.parentElement) {
+    createImmersiveSummaryBtn.parentElement.insertBefore(
+      openDockBtn, 
+      createImmersiveSummaryBtn.nextSibling
+    );
+  }
+  
+  console.log('✅ Open Dock button added to UI');
+}
+
+function hideOpenDockButton() {
+  if (openDockBtn && openDockBtn.parentElement) {
+    openDockBtn.remove();
+    openDockBtn = null;
+    console.log('🗑️ Open Dock button removed');
   }
 }
 
@@ -1795,6 +2143,21 @@ async function startAnalysis() {
 
 // ---- Listen for background updates ----
 chrome.runtime.onMessage.addListener(async (message) => {
+  // Handle dock closed from content script
+  if (message.type === 'dock_closed') {
+    console.log('🔔 Dock was closed in main window');
+    // Reset the open dock button if it exists
+    if (openDockBtn) {
+      openDockBtn.innerHTML = '<span aria-hidden="true">🎬</span> Open Dock in Main Window';
+      openDockBtn.disabled = false;
+      openDockBtn.style.opacity = '1';
+    }
+    if (voiceDisplay) {
+      voiceDisplay.textContent = '🔔 Dock closed. Click "Open Dock" to reopen.';
+    }
+    return;
+  }
+  
   // Handle recording messages
   if (message.target === 'popup') {
     switch (message.type) {

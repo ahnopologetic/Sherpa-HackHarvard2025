@@ -4,6 +4,7 @@ Business logic for Sherpa API
 
 import logging
 import os
+import hashlib
 from typing import Any, Dict, Optional
 
 import uuid
@@ -16,7 +17,6 @@ from datetime import datetime, timedelta
 from models import (
     CreateSessionRequest,
     CreateSessionResponse,
-    ImmersiveSummaryResponse,
     ImmersiveSummaryTranscriptResponse,
     InterpretResponse,
 )
@@ -29,6 +29,8 @@ logger.setLevel(logging.DEBUG)  # Set your desired logging level
 
 sessions: Dict[str, Dict] = {}
 jobs: Dict[str, dict] = {}
+# Cache for immersive summaries by URL hash
+immersive_cache: Dict[str, dict] = {}
 MOCK_SECTION_MAP = {
     "title": "Why bees matter",
     "sections": [
@@ -45,6 +47,96 @@ def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
         wf.setsampwidth(sample_width)
         wf.setframerate(rate)
         wf.writeframes(pcm)
+
+
+def generate_url_hash(page_url: str, page_title: str, context: Optional[str] = None) -> str:
+    """
+    Generate a hash for caching based on URL, title, and context.
+    """
+    # Create a string that represents the unique content
+    content_string = f"{page_url}|{page_title}|{context or ''}"
+    
+    # Generate SHA-256 hash
+    return hashlib.sha256(content_string.encode()).hexdigest()[:16]  # Use first 16 chars
+
+
+def get_cached_immersive_summary(url_hash: str) -> Optional[dict]:
+    """
+    Get cached immersive summary if it exists.
+    """
+    if url_hash in immersive_cache:
+        cached = immersive_cache[url_hash]
+        # Check if the audio file still exists
+        if os.path.exists(cached["audio_file"]):
+            logger.info(f"📦 Using cached immersive summary for hash: {url_hash}")
+            return cached
+        else:
+            # Clean up stale cache entry
+            del immersive_cache[url_hash]
+            logger.info(f"🗑️ Removed stale cache entry for hash: {url_hash}")
+    
+    return None
+
+
+def cache_immersive_summary(url_hash: str, audio_file: str, transcript_data: ImmersiveSummaryTranscriptResponse) -> None:
+    """
+    Cache the immersive summary for future use.
+    """
+    immersive_cache[url_hash] = {
+        "audio_file": audio_file,
+        "transcript_data": transcript_data,
+        "created_at": datetime.utcnow(),
+    }
+    logger.info(f"💾 Cached immersive summary for hash: {url_hash}")
+
+
+def cleanup_old_cache_entries(max_age_hours: int = 24) -> None:
+    """
+    Clean up cache entries older than max_age_hours.
+    """
+    current_time = datetime.utcnow()
+    cutoff_time = current_time - timedelta(hours=max_age_hours)
+    
+    to_remove = []
+    for url_hash, cache_entry in immersive_cache.items():
+        if cache_entry["created_at"] < cutoff_time:
+            to_remove.append(url_hash)
+    
+    for url_hash in to_remove:
+        cache_entry = immersive_cache[url_hash]
+        # Try to delete the audio file
+        try:
+            if os.path.exists(cache_entry["audio_file"]):
+                os.remove(cache_entry["audio_file"])
+        except OSError:
+            pass  # File might be in use
+        
+        del immersive_cache[url_hash]
+        logger.info(f"🗑️ Cleaned up old cache entry: {url_hash}")
+    
+    if to_remove:
+        logger.info(f"🧹 Cleaned up {len(to_remove)} old cache entries")
+
+
+def get_cache_stats() -> dict:
+    """
+    Get cache statistics.
+    """
+    total_entries = len(immersive_cache)
+    total_size = 0
+    
+    for cache_entry in immersive_cache.values():
+        try:
+            if os.path.exists(cache_entry["audio_file"]):
+                total_size += os.path.getsize(cache_entry["audio_file"])
+        except OSError:
+            pass
+    
+    return {
+        "total_entries": total_entries,
+        "total_size_bytes": total_size,
+        "total_size_mb": round(total_size / (1024 * 1024), 2),
+    }
 
 
 class SessionService:
@@ -407,15 +499,42 @@ Based on the provided section map, split the immersive summary into distinct sec
         context: Optional[str] = None,
     ) -> None:
         """
-        Generate an immersive summary of the page.
+        Generate an immersive summary of the page with caching support.
         """
+        # Generate hash for caching
+        url_hash = generate_url_hash(page_url, page_title, context)
+        
+        # Check if we have a cached version
+        cached = get_cached_immersive_summary(url_hash)
+        if cached:
+            # Use cached version - copy the audio file to the job_id location
+            import shutil
+            shutil.copy2(cached["audio_file"], f"{job_id}.wav")
+            
+            # Store job data
+            jobs[job_id] = {
+                "session_id": session_id,
+                "page_url": page_url,
+                "page_title": page_title,
+                "context": context,
+                "status": "completed",
+                "transcript_data": cached["transcript_data"],
+                "cached": True,
+                "cache_hash": url_hash,
+            }
+            logger.info(f"✅ Using cached immersive summary for job {job_id} (hash: {url_hash})")
+            return
+        
+        # No cache found, generate new summary
         jobs[job_id] = {
             "session_id": session_id,
             "page_url": page_url,
             "page_title": page_title,
             "context": context,
             "status": "pending",
+            "cache_hash": url_hash,
         }
+        
         result = ImmersiveSummaryService.generate_immersive_summary_transcript(
             session_id=session_id,
             page_url=page_url,
@@ -423,13 +542,21 @@ Based on the provided section map, split the immersive summary into distinct sec
             context=context,
         )
         logger.info(f"{result.playback_time=}")
+        
+        # Generate audio
+        audio_file = f"{job_id}.wav"
         ImmersiveSummaryService.generate_immersive_summary_audio(
             transcript=result.transcript,
-            output_filepath=f"{job_id}.wav",
+            output_filepath=audio_file,
         )
+        
+        # Cache the result
+        cache_immersive_summary(url_hash, audio_file, result)
+        
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["transcript_data"] = result
-        logger.info("Immersive summary audio job completed")
+        jobs[job_id]["cached"] = False
+        logger.info(f"✅ Generated new immersive summary for job {job_id} (hash: {url_hash})")
 
     def get_immersive_summary_audio(job_id: str) -> bytes:
         """
@@ -456,3 +583,108 @@ Based on the provided section map, split the immersive summary into distinct sec
         if "transcript_data" not in jobs[job_id]:
             raise ValueError("Transcript data not found")
         return jobs[job_id]["transcript_data"]
+
+    @staticmethod
+    def handle_interaction(
+        job_id: str,
+        audio_bytes: bytes,
+        current_position: Optional[float] = None,
+    ) -> tuple[str, str, bytes]:
+        """
+        Handle user interaction with immersive summary.
+        
+        Args:
+            job_id: The job ID for the immersive summary
+            audio_bytes: The audio bytes of the user's question
+            current_position: Current playback position in seconds
+        
+        Returns:
+            Tuple of (answer_text, transcribed_question, answer_audio_bytes)
+        """
+        # Check if job exists and is completed
+        if job_id not in jobs:
+            raise ValueError("Job not found")
+        if jobs[job_id]["status"] != "completed":
+            raise ValueError("Job not completed")
+        
+        # Get the transcript data for context
+        transcript_data = jobs[job_id].get("transcript_data")
+        if not transcript_data:
+            raise ValueError("Transcript data not found")
+        
+        # Initialize Gemini client
+        client = genai.Client(
+            api_key=settings.GOOGLE_VERTEX_AI_API_KEY,
+        )
+        
+        # Get the original context
+        original_context = transcript_data.transcript if hasattr(transcript_data, 'transcript') else ""
+        page_title = jobs[job_id].get("page_title", "")
+        
+        # Use Gemini to transcribe and answer the question
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part(
+                        inline_data=types.Blob(mime_type="audio/wav", data=audio_bytes)
+                    ),
+                    types.Part(
+                        text=(
+                            f"You are a thoughtful co-host for an immersive audio summary. "
+                            f"The user is listening to a summary about '{page_title}'. "
+                            f"They have paused and asked a question. "
+                            f"\n\nOriginal content context:\n{original_context[:1000]}...\n\n"
+                            f"Instructions:\n"
+                            f"1. Listen to and transcribe the user's question\n"
+                            f"2. Answer their question in a friendly, insightful way based on the content\n"
+                            f"3. Keep your answer concise but helpful (2-3 sentences)\n"
+                            f"4. At the end, naturally transition back: 'Now, let's continue with the summary.'\n\n"
+                            f"Respond in JSON format with two fields:\n"
+                            f"- transcribed_question: the user's question as text\n"
+                            f"- answer: your complete answer including the transition back"
+                        )
+                    ),
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.7,
+                ),
+            )
+            
+            # Parse the response
+            import json
+            result = json.loads(response.text)
+            transcribed_question = result.get("transcribed_question", "Could not transcribe question")
+            answer_text = result.get("answer", "Sorry, I couldn't process your question.")
+            
+        except Exception as e:
+            logger.error(f"Gemini API error during interaction: {e}")
+            transcribed_question = "Error transcribing question"
+            answer_text = "Sorry, I couldn't process your question. Let's continue with the summary."
+        
+        # Generate TTS audio for the answer using Gemini TTS
+        try:
+            tts_response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-tts",
+                contents=answer_text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name="Kore",
+                            )
+                        )
+                    ),
+                ),
+            )
+            
+            answer_audio_bytes = tts_response.candidates[0].content.parts[0].inline_data.data
+            
+        except Exception as e:
+            logger.error(f"TTS generation error: {e}")
+            # Return empty audio if TTS fails
+            answer_audio_bytes = b""
+        
+        return answer_text, transcribed_question, answer_audio_bytes
