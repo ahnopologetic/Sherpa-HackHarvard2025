@@ -1001,7 +1001,8 @@ function startPollingForImmersiveSummary(jobId) {
             await chrome.tabs.sendMessage(tab.id, {
               command: 'show_immersive_dock',
               audioUrl: audioUrl,
-              transcript: fullTranscript
+              transcript: fullTranscript,
+              playbackTimes: immersivePlaybackTimes // Send timing data for better sync
             });
             console.log('✅ Immersive dock shown in main window');
           }

@@ -629,6 +629,8 @@ let currentTranscript = '';
 let transcriptSegments = [];
 let currentSegmentIndex = 0;
 let isPlaying = false;
+let playbackTimes = []; // Store section timing data
+let wordTimings = []; // Store calculated word-level timings
 
 function createSherpaDock() {
   if (sherpaDock) {
@@ -1119,11 +1121,26 @@ function updateTranscriptHighlight() {
   const currentTime = dockAudio.currentTime;
   const words = sherpaDock.querySelectorAll('.sherpa-transcript-word');
 
-  // Simple word-by-word animation based on time
-  // Estimate words per second (average speaking rate is about 2-3 words per second)
-  const totalWords = transcriptSegments.length;
-  const wordsPerSecond = totalWords / dockAudio.duration;
-  const currentWordIndex = Math.floor(currentTime * wordsPerSecond);
+  let currentWordIndex = -1;
+  let currentSection = null;
+
+  // If we have word timings, use them for accurate sync
+  if (wordTimings.length > 0) {
+    // Find the current word based on timing
+    for (let i = 0; i < wordTimings.length; i++) {
+      if (currentTime >= wordTimings[i].startTime && 
+          (i === wordTimings.length - 1 || currentTime < wordTimings[i + 1].startTime)) {
+        currentWordIndex = i;
+        currentSection = wordTimings[i].section;
+        break;
+      }
+    }
+  } else {
+    // Fallback to simple estimation
+    const totalWords = transcriptSegments.length;
+    const wordsPerSecond = totalWords / dockAudio.duration;
+    currentWordIndex = Math.floor(currentTime * wordsPerSecond);
+  }
 
   let activeWord = null;
   
@@ -1137,6 +1154,14 @@ function updateTranscriptHighlight() {
       activeWord = word;
     }
   });
+  
+  // Update section title if we have it
+  if (currentSection) {
+    const titleEl = document.querySelector('.sherpa-transcript-title');
+    if (titleEl) {
+      titleEl.textContent = `📝 ${currentSection}`;
+    }
+  }
   
   // Auto-scroll to keep active word in view
   if (activeWord) {
@@ -1153,15 +1178,73 @@ function updateTranscriptHighlight() {
   }
 }
 
-function setTranscript(transcript) {
+function setTranscript(transcript, audioDuration) {
   currentTranscript = transcript;
   transcriptSegments = transcript.split(/\s+/).filter(w => w.length > 0);
+
+  // Calculate word-level timings based on section data
+  calculateWordTimings(audioDuration);
 
   const transcriptText = document.getElementById('sherpa-transcript-text');
   if (transcriptText) {
     transcriptText.innerHTML = transcriptSegments
       .map((word, index) => `<span class="sherpa-transcript-word" data-index="${index}">${word}</span>`)
       .join(' ');
+  }
+}
+
+function calculateWordTimings(audioDuration) {
+  wordTimings = [];
+  
+  if (!playbackTimes || playbackTimes.length === 0 || !audioDuration) {
+    console.log('[Sherpa Dock] No playback timing data available, using estimation');
+    return;
+  }
+
+  console.log('[Sherpa Dock] Calculating word timings from', playbackTimes.length, 'sections');
+
+  // Split transcript into sections based on section names from playbackTimes
+  // This is a heuristic approach since we don't have exact word-to-section mapping
+  const totalWords = transcriptSegments.length;
+  const wordsPerSection = Math.ceil(totalWords / playbackTimes.length);
+  
+  let wordIndex = 0;
+  
+  for (let sectionIdx = 0; sectionIdx < playbackTimes.length; sectionIdx++) {
+    const section = playbackTimes[sectionIdx];
+    const nextSection = playbackTimes[sectionIdx + 1];
+    
+    const sectionStartTime = section.time;
+    const sectionEndTime = nextSection ? nextSection.time : audioDuration;
+    const sectionDuration = sectionEndTime - sectionStartTime;
+    
+    // Calculate how many words should be in this section
+    let wordsInSection = wordsPerSection;
+    if (sectionIdx === playbackTimes.length - 1) {
+      // Last section gets all remaining words
+      wordsInSection = totalWords - wordIndex;
+    }
+    
+    // Distribute words evenly across the section duration
+    for (let i = 0; i < wordsInSection && wordIndex < totalWords; i++) {
+      const wordProgress = i / Math.max(wordsInSection, 1);
+      const wordStartTime = sectionStartTime + (wordProgress * sectionDuration);
+      
+      wordTimings.push({
+        index: wordIndex,
+        word: transcriptSegments[wordIndex],
+        startTime: wordStartTime,
+        section: section.name
+      });
+      
+      wordIndex++;
+    }
+  }
+  
+  console.log('[Sherpa Dock] Calculated timings for', wordTimings.length, 'words');
+  if (wordTimings.length > 0) {
+    console.log('[Sherpa Dock] First word:', wordTimings[0]);
+    console.log('[Sherpa Dock] Last word:', wordTimings[wordTimings.length - 1]);
   }
 }
 
@@ -1203,6 +1286,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     try {
       createSherpaDock();
       
+      // Store playback times for synchronization
+      if (request.playbackTimes) {
+        playbackTimes = request.playbackTimes;
+        console.log('[Sherpa Dock] Received', playbackTimes.length, 'section timings');
+      }
+      
       // Set up audio
       if (request.audioUrl) {
         dockAudio = new Audio(request.audioUrl);
@@ -1216,26 +1305,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           isPlaying = false;
         });
         
-        // Auto-play with a small delay
-        setTimeout(() => {
-          if (dockAudio && sherpaDock) {
-            dockAudio.play().then(() => {
-              const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
-              const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
-              playIcon.style.display = 'none';
-              pauseIcon.style.display = 'block';
-              isPlaying = true;
-              console.log('🎵 Auto-playing immersive summary');
-            }).catch(err => {
-              console.log('Auto-play blocked, user interaction required:', err);
-            });
+        // Wait for audio metadata to load before setting transcript (so we have duration)
+        dockAudio.addEventListener('loadedmetadata', () => {
+          console.log('[Sherpa Dock] Audio loaded, duration:', dockAudio.duration);
+          
+          // Set transcript with timing data
+          if (request.transcript) {
+            setTranscript(request.transcript, dockAudio.duration);
           }
-        }, 500);
-      }
-      
-      // Set transcript
-      if (request.transcript) {
-        setTranscript(request.transcript);
+          
+          // Auto-play after a small delay
+          setTimeout(() => {
+            if (dockAudio && sherpaDock) {
+              dockAudio.play().then(() => {
+                const playIcon = sherpaDock.querySelector('.sherpa-play-icon');
+                const pauseIcon = sherpaDock.querySelector('.sherpa-pause-icon');
+                playIcon.style.display = 'none';
+                pauseIcon.style.display = 'block';
+                isPlaying = true;
+                console.log('🎵 Auto-playing immersive summary');
+              }).catch(err => {
+                console.log('Auto-play blocked, user interaction required:', err);
+              });
+            }
+          }, 500);
+        });
       }
       
       sendResponse({ ok: true });
