@@ -1,8 +1,8 @@
-# Project Atlas - AI-Powered Web Accessibility Extension
+# Project Sherpa - AI-Powered Web Accessibility Extension
 
 ## Overview
 
-Project Atlas is a Chrome extension designed to help screen reader users quickly understand webpage structure and layout through AI-generated audio summaries.
+Project Sherpa is a Chrome extension designed to help screen reader users quickly understand webpage structure and layout through AI-generated audio summaries.
 
 ## Features 🎯
 
@@ -47,7 +47,7 @@ The extension extracts and analyzes:
 ## Project Structure
 
 ```
-project-atlas/
+project-sherpa/
 ├── manifest.json # Extension configuration
 ├── popup.html # Extension popup interface
 ├── popup.css # Popup styling
@@ -215,7 +215,7 @@ Check these common issues:
 
 ## Contributing
 
-This is Phase 1 of Project Atlas. Contributions, bug reports, and feature suggestions are welcome!
+This is Phase 1 of Project Sherpa. Contributions, bug reports, and feature suggestions are welcome!
 
 ## License
 
@@ -244,6 +244,6 @@ Select the folder containing the extension files
 ### Basic Usage
 
 * Navigate to any webpage you want to analyze
-* Click the Project Atlas extension icon
+* Click the Project Sherpa extension icon
 * Click "Analyze Page Structure"
 * Wait a few seconds while the AI analyzes the page
